@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["HyperPlonkErrors"],"struct":["CustomizedGates","MockCircuit","SelectorColumn","WitnessColumn"]};
