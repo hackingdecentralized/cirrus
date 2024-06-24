@@ -6,15 +6,16 @@
 
 //! This module implements the sum check protocol.
 
-use crate::poly_iop::{
+use crate::{poly_iop::{
     errors::PolyIOPErrors,
-    structs::{IOPProof, IOPProverState, IOPVerifierState},
+    structs::{IOPProof, IOPProverMessage, IOPProverState, IOPVerifierState},
     PolyIOP,
-};
+}, MasterProverChannel, SlaveProverChannel};
 use arithmetic::{VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
 
@@ -49,6 +50,20 @@ pub trait SumCheck<F: PrimeField> {
         poly: &Self::VirtualPolynomial,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
+
+    fn prove_distributed_master(
+        poly_aux_info: &Self::VPAuxInfo,
+        master_poly_aux_info: &Self::VPAuxInfo,
+        master_poly_products: &Vec<(F, Vec<usize>)>,
+        slave_poly_aux_info: &Self::VPAuxInfo,
+        transcript: &mut Self::Transcript,
+        master_channel: &impl MasterProverChannel,
+    ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
+
+    fn prove_distributed_slave(
+        poly: &Self::VirtualPolynomial,
+        slave_channel: &impl SlaveProverChannel,
+    ) -> Result<(), PolyIOPErrors>;
 
     /// Verify the claimed sum using the proof
     fn verify(
@@ -181,6 +196,156 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         })
     }
 
+    fn prove_distributed_master(
+        poly_aux_info: &Self::VPAuxInfo,
+        master_poly_aux_info: &Self::VPAuxInfo,
+        master_poly_products: &Vec<(F, Vec<usize>)>,
+        slave_poly_aux_info: &Self::VPAuxInfo,
+        transcript: &mut Self::Transcript,
+        master_channel: &impl MasterProverChannel,
+    ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
+        let start = start_timer!(|| "sum check master prover prove");
+
+        transcript.append_serializable_element(b"aux info", poly_aux_info)?;
+
+        let phase1 = slave_poly_aux_info.num_variables;
+        let phase2 = master_poly_aux_info.num_variables;
+
+        if phase2 != master_channel.log_num_slaves() {
+            return Err(PolyIOPErrors::InvalidSlaveNumber)
+        }
+
+        if phase1 + phase2 != poly_aux_info.num_variables {
+            return Err(PolyIOPErrors::InvalidParameters(String::from("poly aux info doesn't match")))
+        }
+
+        let mut challenge = None;
+        let mut challenges = Vec::new();
+        let mut prover_msgs = Vec::with_capacity(phase1 + phase2);
+        let eval_len = slave_poly_aux_info.max_degree + 1;
+
+        // Phase 1: 
+        // 1. Master Prover sends the starting signal to the slaves, slaves return
+        //    their virtual polynomial aux info.
+        // 2. Master Prover checks the aux info matches and sends challenges to the
+        //    slaves sequentially, and slaves return the prover messages. Master 
+        //    prover aggregates the slave prover messages to form the whole proof
+        //    of the first phase.
+        // 3. At the last round, Master Prover sends the final challenge for slave
+        //    provers and slave provers send the evaluation of each mle at challenge
+        //    point to the master prover.
+
+        master_channel.send(b"sum check starting signal")?;
+
+        let slave_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
+
+        slave_aux_infos.par_iter().map(|slave_aux_info| 
+            (slave_aux_info == slave_poly_aux_info).then_some(()).ok_or(PolyIOPErrors::SlaveNotMatching)
+        ).collect::<Result<Vec<_>, _>>()?;
+
+        for _ in 0..phase1 {
+            master_channel.send(&challenge)?;
+            let slave_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
+            let evaluations = slave_prover_msgs.iter()
+                .fold( vec![F::zero(); eval_len],
+                    | ev1, ev2 | {
+                        ev1.into_iter().zip(ev2.evaluations.iter())
+                            .map(|(e1, e2)| e1 + e2)
+                            .collect::<Vec<_>>()
+                    }
+                );
+
+            let prover_msg = IOPProverMessage { evaluations };
+            transcript.append_serializable_element(b"prover msg", &prover_msg)?;
+            prover_msgs.push(prover_msg);
+            challenge = Some(transcript.get_and_append_challenge(b"Internal round")?);
+            
+            if let Some(p) = challenge {
+                challenges.push(p);
+            }
+        }
+
+        master_channel.send(&challenge)?;
+        let flattened_ml_extensions = {
+            let evals = master_channel.recv::<Vec<F>>()?;
+            let len = evals.get(0).map(|x| x.len()).ok_or(PolyIOPErrors::InvalidDistributedMessage)?;
+            let mut x = evals
+                .into_iter().map(|x| x.into_iter())
+                .collect::<Vec<_>>();
+            (0..len)
+                .map(
+                    |_| x.iter_mut()
+                    .map(|y| y.next().unwrap())
+                    .collect::<Vec<_>>()
+                )
+                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(phase2,x)))
+                .collect::<Vec<_>>()
+        };
+
+        let poly = VirtualPolynomial::new_from_raw(
+            master_poly_aux_info.clone(),
+            master_poly_products.clone(),
+            flattened_ml_extensions);
+
+        // Phase 2:
+        //   The master prover generates the proof for the second phase
+        //   just as the original sum check protocol.
+
+        challenge = None;
+        let mut prover_state = IOPProverState::prover_init(&poly)?;
+        for _ in 0..phase2 {
+            let prover_msg: IOPProverMessage<F> =
+                IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
+            transcript.append_serializable_element(b"prover msg", &prover_msg)?;
+            prover_msgs.push(prover_msg);
+            challenge = Some(transcript.get_and_append_challenge(b"Internal round")?);
+            
+            if let Some(p) = challenge {
+                challenges.push(p);
+            }
+        }
+
+        end_timer!(start);
+        Ok(IOPProof {
+            point: challenges,
+            proofs: prover_msgs,
+        })
+    }
+
+    fn prove_distributed_slave(
+        poly: &Self::VirtualPolynomial,
+        slave_channel: &impl SlaveProverChannel,
+    ) -> Result<(), PolyIOPErrors> {
+        let mut challenge;
+        let mut prover_state = IOPProverState::prover_init(poly)?;
+
+        let start_data: [u8; 25] = slave_channel.recv()?;
+        if &start_data != b"sum check starting signal" {
+            return Err(PolyIOPErrors::InvalidDistributedMessage)
+        }
+        slave_channel.send(&poly.aux_info)?;
+
+        for i in 0..poly.aux_info.num_variables {
+            challenge = slave_channel.recv()?;
+            let prover_msg = IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
+            slave_channel.send(&prover_msg)?;
+            dbg!(format!("round {}, slave {}", i, slave_channel.slave_id()));
+        }
+        challenge = slave_channel.recv()?;
+        let challenge = challenge.unwrap();
+        let evaluations = prover_state.poly.flattened_ml_extensions
+            .iter()
+            .map(|mle| {
+                let zero_value = mle.evaluations[0];
+                let one_value = mle.evaluations[1];
+                (one_value - zero_value) * challenge + zero_value
+            })
+            .collect::<Vec<_>>();
+
+        slave_channel.send(&evaluations)?;
+        Ok(())
+    }
+
     fn verify(
         claimed_sum: F,
         proof: &Self::SumCheckProof,
@@ -211,12 +376,14 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
 #[cfg(test)]
 mod test {
 
+    use crate::new_master_slave_thread_channels;
+
     use super::*;
     use ark_bls12_381::Fr;
     use ark_ff::UniformRand;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
     use ark_std::test_rng;
-    use std::sync::Arc;
+    use std::{sync::Arc, thread::spawn};
 
     fn test_sumcheck(
         nv: usize,
@@ -281,6 +448,85 @@ mod test {
             poly.evaluate(&subclaim.point).unwrap() == subclaim.expected_evaluation,
             "wrong subclaim"
         );
+        Ok(())
+    }
+
+    fn test_sumcheck_distributed(
+        n_log_provers: usize,
+        nv: usize,
+        num_multiplicands_range: (usize, usize),
+        num_products: usize,
+    ) -> Result<(), PolyIOPErrors> {
+        assert!(n_log_provers <= nv, "log number of provers should be no larger than number of variables");
+
+        let mut rng = test_rng();
+        let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
+
+        let (master_channel, slave_channels) = new_master_slave_thread_channels(n_log_provers);
+
+        let (poly, distributed_poly, asserted_sum) =
+            VirtualPolynomial::<Fr>::rand_distributed(n_log_provers, nv, num_multiplicands_range, num_products, &mut rng)?;
+        let master_poly_aux_info = VPAuxInfo {
+            num_variables: n_log_provers,
+            ..poly.aux_info.clone()
+        };
+        let slave_poly_aux_info = VPAuxInfo {
+            num_variables: nv - n_log_provers,
+            ..poly.aux_info.clone()
+        };
+    
+        let slave_handles = slave_channels.into_iter()
+            .zip(distributed_poly)
+            .map( |(ch, poly)| 
+                (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
+            )
+            .map( |(ch, aux_info, products, mles)| {
+                spawn(move || {
+                    <PolyIOP<Fr> as SumCheck<Fr>>::prove_distributed_slave(
+                        &VirtualPolynomial::new_from_raw(aux_info, products, mles), &ch)
+                })
+            }).collect::<Vec<_>>();
+        
+        let proof = <PolyIOP<Fr> as SumCheck<Fr>>::prove_distributed_master(
+            &poly.aux_info, &master_poly_aux_info, &poly.products, 
+            &slave_poly_aux_info, &mut transcript, &master_channel)?;
+        
+        slave_handles.into_iter().map(|x| x.join().unwrap())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
+        let subclaim = <PolyIOP<Fr> as SumCheck<Fr>>::verify(
+            asserted_sum,
+            &proof,
+            &poly.aux_info,
+            &mut transcript,
+        )?;
+        assert!(
+            poly.evaluate(&subclaim.point).unwrap() == subclaim.expected_evaluation,
+            "wrong subclaim"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_distributed_polynomial() -> Result<(), PolyIOPErrors> {
+        let mut rng = test_rng();
+        let n_log_provers = 2;
+        let nv = 8;
+        let num_multiplicands_range = (2, 6);
+        let num_products = 5;
+        
+        let (poly, distributed_poly, _) = VirtualPolynomial::<Fr>::rand_distributed(
+            n_log_provers, nv, num_multiplicands_range, num_products, &mut rng)?;
+        
+        assert_eq!(
+            poly.evaluate(&vec![Fr::from(0); nv])?,
+            distributed_poly[0].evaluate(&vec![Fr::from(0); nv - n_log_provers])?,
+            "wrong evaluation"
+        );
+
+        test_sumcheck_distributed(n_log_provers, nv, num_multiplicands_range, num_products)?;
         Ok(())
     }
 

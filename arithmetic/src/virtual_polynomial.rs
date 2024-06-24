@@ -10,7 +10,7 @@
 use crate::{errors::ArithErrors, multilinear_polynomial::random_zero_mle_list, random_mle_list};
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     end_timer,
     rand::{Rng, RngCore},
@@ -59,7 +59,7 @@ pub struct VirtualPolynomial<F: PrimeField> {
     raw_pointers_lookup_table: HashMap<*const DenseMultilinearExtension<F>, usize>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 /// Auxiliary information about the multilinear polynomial
 pub struct VPAuxInfo<F: PrimeField> {
     /// max number of multiplicands in each product
@@ -124,6 +124,19 @@ impl<F: PrimeField> VirtualPolynomial<F> {
             products: vec![(coefficient, vec![0])],
             flattened_ml_extensions: vec![mle.clone()],
             raw_pointers_lookup_table: hm,
+        }
+    }
+
+    pub fn new_from_raw(
+        aux_info: VPAuxInfo<F>,
+        products: Vec<(F, Vec<usize>)>,
+        flattened_ml_extensions: Vec<Arc<DenseMultilinearExtension<F>>>,
+    ) -> Self {
+        VirtualPolynomial {
+            aux_info,
+            products,
+            flattened_ml_extensions,
+            raw_pointers_lookup_table: HashMap::new(),
         }
     }
 
@@ -272,6 +285,55 @@ impl<F: PrimeField> VirtualPolynomial<F> {
         Ok((poly, sum))
     }
 
+    /// Sample a random virtual polynomial, and distribute to the provers.
+    /// return the original polynomial, distributed polynomials and its sum.
+    pub fn rand_distributed<R: RngCore>(
+        n_log_provers: usize,
+        nv: usize,
+        num_multiplicands_range: (usize, usize),
+        num_products: usize,
+        rng: &mut R,
+    ) -> Result<(Self, Vec<Self>, F), ArithErrors> {
+        if n_log_provers > nv {
+            return Err(ArithErrors::InvalidParameters(
+                "number of provers is greater than number of variables".to_string(),
+            ));
+        }
+
+        let start = start_timer!(|| "sample random distributed virtual polynomial");
+
+        let mut sum = F::zero();
+        let mut poly = VirtualPolynomial::new(nv);
+        for _ in 0..num_products {
+            let num_multiplicands =
+                rng.gen_range(num_multiplicands_range.0..num_multiplicands_range.1);
+            let (product, product_sum) = random_mle_list(nv, num_multiplicands, rng);
+            let coefficient = F::rand(rng);
+            poly.add_mle_list(product.into_iter(), coefficient)?;
+            sum += product_sum * coefficient;
+        }
+
+        let nv_slave_provers = nv - n_log_provers;
+        let products = &poly.products;
+        let slave_aux_info = VPAuxInfo {
+            num_variables: nv_slave_provers,
+            ..poly.aux_info.clone()
+        };
+        let distributed_polys = (0..1<<n_log_provers).map( | i | {
+            let x = poly.flattened_ml_extensions
+                .iter()
+                .map(|x| x.evaluations[i*(1<<nv_slave_provers)..(i+1)*(1<<nv_slave_provers)].to_vec())
+                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(nv_slave_provers, x)))
+                .collect::<Vec<_>>();
+
+            VirtualPolynomial::new_from_raw(slave_aux_info.clone(), products.clone(), x)
+        }).collect::<Vec<_>>();
+
+
+        end_timer!(start);
+        Ok((poly, distributed_polys, sum))
+    }
+    
     /// Sample a random virtual polynomial that evaluates to zero everywhere
     /// over the boolean hypercube.
     pub fn rand_zero<R: RngCore>(

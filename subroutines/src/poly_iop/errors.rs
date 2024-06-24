@@ -6,7 +6,7 @@
 
 //! Error module.
 
-use crate::pcs::prelude::PCSError;
+use crate::{pcs::prelude::PCSError, DistributedError};
 use arithmetic::ArithErrors;
 use ark_std::string::String;
 use displaydoc::Display;
@@ -35,6 +35,14 @@ pub enum PolyIOPErrors {
     ArithmeticErrors(ArithErrors),
     /// PCS error {0}
     PCSErrors(PCSError),
+    /// Invalid Slave number
+    InvalidSlaveNumber,
+    /// Master Slave error
+    MasterSlaveError(DistributedError),
+    /// Slave not matching
+    SlaveNotMatching,
+    /// Invalid PolyIOP distributed message
+    InvalidDistributedMessage,
 }
 
 impl From<ark_serialize::SerializationError> for PolyIOPErrors {
@@ -58,5 +66,11 @@ impl From<ArithErrors> for PolyIOPErrors {
 impl From<PCSError> for PolyIOPErrors {
     fn from(e: PCSError) -> Self {
         Self::PCSErrors(e)
+    }
+}
+
+impl From<DistributedError> for PolyIOPErrors {
+    fn from(e: DistributedError) -> Self {
+        Self::MasterSlaveError(e)
     }
 }

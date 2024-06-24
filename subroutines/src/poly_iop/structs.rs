@@ -8,7 +8,7 @@
 
 use arithmetic::VirtualPolynomial;
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 /// An IOP proof is a collections of
 /// - messages from prover to verifier at each round through the interactive
@@ -22,7 +22,7 @@ pub struct IOPProof<F: PrimeField> {
 
 /// A message from the prover to the verifier at a given round
 /// is a list of evaluations.
-#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct IOPProverMessage<F: PrimeField> {
     pub(crate) evaluations: Vec<F>,
 }
