@@ -292,6 +292,15 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         //   just as the original sum check protocol.
 
         challenge = None;
+        
+        // special situation: only one slave prover
+        if phase2 == 0 {
+            return Ok(IOPProof {
+                point: challenges,
+                proofs: prover_msgs,
+            })
+        }
+
         let mut prover_state = IOPProverState::prover_init(&poly)?;
         for _ in 0..phase2 {
             let prover_msg: IOPProverMessage<F> =
@@ -316,22 +325,34 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         slave_channel: &impl SlaveProverChannel,
     ) -> Result<(), PolyIOPErrors> {
-        let mut challenge;
-        let mut prover_state = IOPProverState::prover_init(poly)?;
-
         let start_data: [u8; 25] = slave_channel.recv()?;
         if &start_data != b"sum check starting signal" {
             return Err(PolyIOPErrors::InvalidDistributedMessage)
         }
         slave_channel.send(&poly.aux_info)?;
 
+        let mut challenge = slave_channel.recv()?;
+
+        // special situation: slave got a constant polynomial
+        //    i.e., log slave number is the same as variable number
+        if poly.aux_info.num_variables == 0 {
+            slave_channel.send(
+                &poly.flattened_ml_extensions.iter()
+                    .map(|mle| mle.evaluations[0])
+                    .collect::<Vec<_>>()
+            )?;
+            return Ok(())
+        }
+
+        let mut prover_state = IOPProverState::prover_init(poly)?;
+
         for i in 0..poly.aux_info.num_variables {
-            challenge = slave_channel.recv()?;
             let prover_msg = IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
             slave_channel.send(&prover_msg)?;
             dbg!(format!("round {}, slave {}", i, slave_channel.slave_id()));
+            challenge = slave_channel.recv()?;
         }
-        challenge = slave_channel.recv()?;
+
         let challenge = challenge.unwrap();
         let evaluations = prover_state.poly.flattened_ml_extensions
             .iter()
@@ -514,7 +535,7 @@ mod test {
         let mut rng = test_rng();
         let n_log_provers = 2;
         let nv = 8;
-        let num_multiplicands_range = (2, 6);
+        let num_multiplicands_range = (1, 3);
         let num_products = 5;
         
         let (poly, distributed_poly, _) = VirtualPolynomial::<Fr>::rand_distributed(
