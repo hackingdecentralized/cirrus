@@ -19,6 +19,8 @@ use errors::PCSError;
 use std::{borrow::Borrow, fmt::Debug, hash::Hash};
 use transcript::IOPTranscript;
 
+use crate::{MasterProverChannel, WorkerProverChannel};
+
 /// This trait defines APIs for polynomial commitment schemes.
 /// Note that for our usage of PCS, we do not require the hiding property.
 pub trait PolynomialCommitmentScheme<E: Pairing> {
@@ -129,6 +131,44 @@ pub trait PolynomialCommitmentScheme<E: Pairing> {
         // trait without always implementing the batching APIs.
         unimplemented!()
     }
+}
+
+pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmentScheme<E> {
+    type MasterProverParam: Clone + Sync;
+    type WorkerProverParam: Clone + Sync;
+
+    type MasterPolynomialHandle: Clone + Debug + PartialEq + Eq;
+    type WorkerPolynomialHandle: Clone + Debug + PartialEq + Eq;
+
+    fn prover_param_distributed(
+        prover_param: Self::ProverParam,
+        log_num_workers: usize,
+    ) -> Result<(Self::MasterProverParam, Vec<Self::WorkerProverParam>), PCSError>;
+
+    fn commit_distributed_master(
+        master_prover_param: impl Borrow<Self::MasterProverParam>,
+        handle: &Self::MasterPolynomialHandle,
+        master_channel: &impl MasterProverChannel
+    ) -> Result<Self::Commitment, PCSError>;
+
+    fn commit_distributed_worker(
+        worker_prover_param: impl Borrow<Self::WorkerProverParam>,
+        poly: &Self::WorkerPolynomialHandle,
+        worker_channel: &impl WorkerProverChannel
+    ) -> Result<(), PCSError>;
+
+    fn open_distributed_master(
+        master_prover_param: impl Borrow<Self::MasterProverParam>,
+        handle: &Self::MasterPolynomialHandle,
+        point: &Self::Point,
+        master_channel: &impl MasterProverChannel
+    ) -> Result<(Self::Proof, Self::Evaluation), PCSError>;
+
+    fn open_distributed_worker(
+        worker_prover_param: impl Borrow<Self::WorkerProverParam>,
+        poly: &Self::WorkerPolynomialHandle,
+        worker_channel: &impl WorkerProverChannel
+    ) -> Result<(), PCSError>;
 }
 
 /// API definitions for structured reference string

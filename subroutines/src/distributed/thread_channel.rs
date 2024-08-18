@@ -1,46 +1,46 @@
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-use super::{prelude::DistributedError, MasterProverChannel, SlaveProverChannel};
+use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
 
 pub struct MasterProverChannelThread {
-    log_num_slaves: usize,
+    log_num_workers: usize,
     send_channel: Vec<Sender<Vec<u8>>>,
     recv_channel: Vec<Receiver<Vec<u8>>>,
 }
 
-pub struct SlaveProverChannelThread {
-    slave_id: usize,
+pub struct WorkerProverChannelThread {
+    worker_id: usize,
     send_channel: Sender<Vec<u8>>,
     recv_channel: Receiver<Vec<u8>>,
 }
 
 impl MasterProverChannelThread {
     pub fn new(
-        log_num_slaves: usize,
+        log_num_workers: usize,
         send_channel: Vec<Sender<Vec<u8>>>,
         recv_channel: Vec<Receiver<Vec<u8>>>,
     ) -> Self {
-        assert_eq!(send_channel.len(), 1 << log_num_slaves);
-        assert_eq!(recv_channel.len(), 1 << log_num_slaves);
+        assert_eq!(send_channel.len(), 1 << log_num_workers);
+        assert_eq!(recv_channel.len(), 1 << log_num_workers);
 
         Self {
-            log_num_slaves,
+            log_num_workers,
             send_channel,
             recv_channel,
         }
     }
 }
 
-impl SlaveProverChannelThread {
-    pub fn new(slave_id: usize,
+impl WorkerProverChannelThread {
+    pub fn new(worker_id: usize,
         send_channel: Sender<Vec<u8>>,
         recv_channel: Receiver<Vec<u8>>
     ) -> Self {
         Self {
-            slave_id,
+            worker_id,
             send_channel,
             recv_channel,
         }
@@ -68,6 +68,28 @@ impl MasterProverChannel for MasterProverChannelThread {
         Ok(())
     }
 
+    fn send_all<T: CanonicalSerialize + Send>(&self, msg: Vec<T>) -> Result<(), DistributedError> {
+        #[cfg(feature = "parallel")]
+        self.send_channel.par_iter().zip(msg.into_par_iter()).map(| (channel, msg) | {
+            let mut serialized_msg = Vec::new();
+            msg.serialize_compressed(&mut serialized_msg)
+                .map_err(DistributedError::from)?;
+            channel.send(serialized_msg)
+                .map_err(|_| DistributedError::MasterSendError)
+        }).collect::<Result<Vec<_>, _>>()?;
+
+        #[cfg(not(feature = "parallel"))]
+        self.send_channel.iter().zip(msg.into_iter()).map(| (channel, msg) | {
+            let mut serialized_msg = Vec::new();
+            msg.serialize_compressed(&mut serialized_msg)
+                .map_err(DistributedError::from)?;
+            channel.send(serialized_msg)
+                .map_err(|_| DistributedError::MasterSendError)
+        }).collect::<Result<Vec<_>, _>>()?;
+
+        Ok(())
+    }
+
     /// TODO: Can you make it parallel?
     fn recv<T: CanonicalDeserialize + Send>(&self) -> Result<Vec<T>, DistributedError> {
         // #[cfg(feature = "parallel")]
@@ -85,48 +107,48 @@ impl MasterProverChannel for MasterProverChannelThread {
         }).collect();
     }
 
-    fn log_num_slaves(&self) -> usize {
-        self.log_num_slaves
+    fn log_num_workers(&self) -> usize {
+        self.log_num_workers
     }
 }
 
-impl SlaveProverChannel for SlaveProverChannelThread {
+impl WorkerProverChannel for WorkerProverChannelThread {
     fn send(&self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg).map_err(DistributedError::from)?;
-        self.send_channel.send(serialized_msg).map_err(|_| DistributedError::SlaveSendError)
+        self.send_channel.send(serialized_msg).map_err(|_| DistributedError::WorkerSendError)
     }
 
     fn recv<T: CanonicalDeserialize>(&self) -> Result<T, DistributedError> {
         let received_msg = self.recv_channel.recv()
-            .map_err(|_| DistributedError::SlaveRecvError)?;
+            .map_err(|_| DistributedError::WorkerRecvError)?;
         T::deserialize_compressed(&received_msg[..])
             .map_err(DistributedError::from)
     }
 
-    fn slave_id(&self) -> usize {
-        self.slave_id
+    fn worker_id(&self) -> usize {
+        self.worker_id
     }
 }
 
-pub fn new_master_slave_thread_channels(
-    log_num_slaves: usize
-) -> (MasterProverChannelThread, Vec<SlaveProverChannelThread>) {
-    let num_slaves = 1 << log_num_slaves;
-    let (master_send, slave_recv): (Vec<_>, Vec<_>) = (0..num_slaves)
+pub fn new_master_worker_thread_channels(
+    log_num_workers: usize
+) -> (MasterProverChannelThread, Vec<WorkerProverChannelThread>) {
+    let num_workers = 1 << log_num_workers;
+    let (master_send, worker_recv): (Vec<_>, Vec<_>) = (0..num_workers)
         .map(|_| { channel() }).unzip();
 
-    let (slave_send, master_recv): (Vec<_>, Vec<_>) = (0..num_slaves)
+    let (worker_send, master_recv): (Vec<_>, Vec<_>) = (0..num_workers)
         .map(|_| { channel() }).unzip();
 
-    let master_channel = MasterProverChannelThread::new(log_num_slaves, master_send, master_recv);
-    let slave_channels = slave_send.into_iter().zip(slave_recv.into_iter())
+    let master_channel = MasterProverChannelThread::new(log_num_workers, master_send, master_recv);
+    let worker_channels = worker_send.into_iter().zip(worker_recv.into_iter())
         .enumerate()
-        .map( | (slave_id, (send, recv)) | {
-            SlaveProverChannelThread::new(slave_id, send, recv)
+        .map( | (worker_id, (send, recv)) | {
+            WorkerProverChannelThread::new(worker_id, send, recv)
         }).collect();
 
-    (master_channel, slave_channels)
+    (master_channel, worker_channels)
 }
 
 #[cfg(test)]
@@ -140,53 +162,53 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_master_slave_thread_channels() {
-        let log_num_slaves = 2;
-        let (master_channel, slave_channels) = new_master_slave_thread_channels(log_num_slaves);
+    fn test_master_worker_thread_channels() {
+        let log_num_workers = 2;
+        let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
         let master_send = vec![1, 2, 3];
         master_channel.send(&master_send).unwrap();
-        let received_msgs: Vec<Vec<u8>> = slave_channels.iter().map(| slave_channel | {
-            slave_channel.recv::<Vec<u8>>().unwrap()
+        let received_msgs: Vec<Vec<u8>> = worker_channels.iter().map(| worker_channel | {
+            worker_channel.recv::<Vec<u8>>().unwrap()
         }).collect();
         assert_eq!(received_msgs, vec![master_send.clone(); 4]);
     }
 
     #[test]
     fn test_multiple_thread() {
-        let log_num_slaves = 2;
-        let (master_channel, slave_channels) = new_master_slave_thread_channels(log_num_slaves);
+        let log_num_workers = 2;
+        let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
         let master = spawn(move || {
             let master_send = vec![1u8, 2, 3];
             master_channel.send(&master_send).unwrap();
             let receive: Vec<u8> = master_channel.recv().unwrap();
             println!("{:?}", receive);
-            assert_eq!(receive, (0..1<<log_num_slaves).collect::<Vec<u8>>(), "Received message is not equal to the sent message");
+            assert_eq!(receive, (0..1<<log_num_workers).collect::<Vec<u8>>(), "Received message is not equal to the sent message");
 
             let receive: Vec<ScalarField> = master_channel.recv().unwrap();
             println!("{:?}", receive);
-            assert_eq!(receive, vec![1u128; 1<<log_num_slaves]
+            assert_eq!(receive, vec![1u128; 1<<log_num_workers]
                 .into_iter()
                 .map(| x | ScalarField::from(x))
                 .collect::<Vec<_>>(),
                 "Received message is not equal to the sent message");
         });
 
-        let slaves: Vec<_> = slave_channels.into_iter().rev().map(| slave_channel | {
+        let workers: Vec<_> = worker_channels.into_iter().rev().map(| worker_channel | {
             spawn(move || {
-                let received_msg: Vec<u8> = slave_channel.recv().unwrap();
+                let received_msg: Vec<u8> = worker_channel.recv().unwrap();
                 assert_eq!(received_msg, vec![1u8, 2, 3], "Received message is not equal to the sent message");
 
-                slave_channel.send(&(slave_channel.slave_id() as u8)).unwrap();
+                worker_channel.send(&(worker_channel.worker_id() as u8)).unwrap();
 
-                slave_channel.send(&ScalarField::from(1u128)).unwrap();
+                worker_channel.send(&ScalarField::from(1u128)).unwrap();
             })
         }).collect();
 
         master.join().expect("Master thread panicked");
-        slaves.into_iter()
-            .map(| slave | slave.join())
+        workers.into_iter()
+            .map(| worker | worker.join())
             .collect::<Result<Vec<_>, _>>()
-            .expect("Slave thread panicked");
+            .expect("worker thread panicked");
     }
 }

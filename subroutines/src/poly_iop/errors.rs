@@ -35,12 +35,12 @@ pub enum PolyIOPErrors {
     ArithmeticErrors(ArithErrors),
     /// PCS error {0}
     PCSErrors(PCSError),
-    /// Invalid Slave number
-    InvalidSlaveNumber,
-    /// Master Slave error
-    MasterSlaveError(DistributedError),
-    /// Slave not matching
-    SlaveNotMatching,
+    /// Invalid Worker number
+    InvalidWorkerNumber,
+    /// Master Worker error
+    MasterWorkerError(DistributedError),
+    /// Worker not matching
+    WorkerNotMatching,
     /// Invalid PolyIOP distributed message
     InvalidDistributedMessage,
 }
@@ -71,6 +71,6 @@ impl From<PCSError> for PolyIOPErrors {
 
 impl From<DistributedError> for PolyIOPErrors {
     fn from(e: DistributedError) -> Self {
-        Self::MasterSlaveError(e)
+        Self::MasterWorkerError(e)
     }
 }

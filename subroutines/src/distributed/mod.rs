@@ -8,15 +8,18 @@ mod thread_channel;
 pub trait MasterProverChannel {
     /// TODO
     fn send(&self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError>;
+
+    /// TODO
+    fn send_all<T: CanonicalSerialize + Send>(&self, msg: Vec<T>) -> Result<(), DistributedError>;
     
     /// TODO
     fn recv<T: CanonicalDeserialize + Send>(&self) -> Result<Vec<T>, DistributedError>;
 
     /// TODO
-    fn log_num_slaves(&self) -> usize;
+    fn log_num_workers(&self) -> usize;
 }
 
-pub trait SlaveProverChannel {
+pub trait WorkerProverChannel {
     /// TODO
     fn send(&self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError>;
     
@@ -24,7 +27,7 @@ pub trait SlaveProverChannel {
     fn recv<T: CanonicalDeserialize>(&self) -> Result<T, DistributedError>;
 
     /// TODO
-    fn slave_id(&self) -> usize;
+    fn worker_id(&self) -> usize;
 }
 
 #[cfg(test)]

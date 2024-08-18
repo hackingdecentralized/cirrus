@@ -8,10 +8,10 @@ pub enum DistributedError {
     MasterSendError,
     /// Master prover failed to receive message
     MasterRecvError,
-    /// Slave prover failed to send message
-    SlaveSendError,
-    /// Slave prover failed to receive message
-    SlaveRecvError,
+    /// Worker prover failed to send message
+    WorkerSendError,
+    /// Worker prover failed to receive message
+    WorkerRecvError,
 }
 
 impl From<ark_serialize::SerializationError> for DistributedError {

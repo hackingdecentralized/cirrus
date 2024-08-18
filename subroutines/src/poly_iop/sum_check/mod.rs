@@ -10,7 +10,7 @@ use crate::{poly_iop::{
     errors::PolyIOPErrors,
     structs::{IOPProof, IOPProverMessage, IOPProverState, IOPVerifierState},
     PolyIOP,
-}, MasterProverChannel, SlaveProverChannel};
+}, MasterProverChannel, WorkerProverChannel};
 use arithmetic::{VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
@@ -51,20 +51,6 @@ pub trait SumCheck<F: PrimeField> {
         transcript: &mut Self::Transcript,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
 
-    fn prove_distributed_master(
-        poly_aux_info: &Self::VPAuxInfo,
-        master_poly_aux_info: &Self::VPAuxInfo,
-        master_poly_products: &Vec<(F, Vec<usize>)>,
-        slave_poly_aux_info: &Self::VPAuxInfo,
-        transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
-    ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
-
-    fn prove_distributed_slave(
-        poly: &Self::VirtualPolynomial,
-        slave_channel: &impl SlaveProverChannel,
-    ) -> Result<(), PolyIOPErrors>;
-
     /// Verify the claimed sum using the proof
     fn verify(
         sum: F,
@@ -72,6 +58,21 @@ pub trait SumCheck<F: PrimeField> {
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::SumCheckSubClaim, PolyIOPErrors>;
+}
+
+pub trait SumCheckDistributed<F: PrimeField>: SumCheck<F> {
+    fn prove_master(
+        poly_aux_info: &Self::VPAuxInfo,
+        poly_products: &Vec<(F, Vec<usize>)>,
+        log_num_workers: usize,
+        transcript: &mut Self::Transcript,
+        master_channel: &impl MasterProverChannel,
+    ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
+
+    fn prove_worker(
+        poly: &Self::VirtualPolynomial,
+        worker_channel: &impl WorkerProverChannel,
+    ) -> Result<(), PolyIOPErrors>;
 }
 
 /// Trait for sum check protocol prover side APIs.
@@ -196,11 +197,38 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         })
     }
 
-    fn prove_distributed_master(
+    fn verify(
+        claimed_sum: F,
+        proof: &Self::SumCheckProof,
+        aux_info: &Self::VPAuxInfo,
+        transcript: &mut Self::Transcript,
+    ) -> Result<Self::SumCheckSubClaim, PolyIOPErrors> {
+        let start = start_timer!(|| "sum check verify");
+
+        transcript.append_serializable_element(b"aux info", aux_info)?;
+        let mut verifier_state = IOPVerifierState::verifier_init(aux_info);
+        for i in 0..aux_info.num_variables {
+            let prover_msg = proof.proofs.get(i).expect("proof is incomplete");
+            transcript.append_serializable_element(b"prover msg", prover_msg)?;
+            IOPVerifierState::verify_round_and_update_state(
+                &mut verifier_state,
+                prover_msg,
+                transcript,
+            )?;
+        }
+
+        let res = IOPVerifierState::check_and_generate_subclaim(&verifier_state, &claimed_sum);
+
+        end_timer!(start);
+        res
+    }
+}
+
+impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
+    fn prove_master(
         poly_aux_info: &Self::VPAuxInfo,
-        master_poly_aux_info: &Self::VPAuxInfo,
-        master_poly_products: &Vec<(F, Vec<usize>)>,
-        slave_poly_aux_info: &Self::VPAuxInfo,
+        poly_products: &Vec<(F, Vec<usize>)>,
+        log_num_workers: usize,
         transcript: &mut Self::Transcript,
         master_channel: &impl MasterProverChannel,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
@@ -208,11 +236,21 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
 
         transcript.append_serializable_element(b"aux info", poly_aux_info)?;
 
-        let phase1 = slave_poly_aux_info.num_variables;
+        let worker_poly_aux_info = Self::VPAuxInfo {
+            num_variables: poly_aux_info.num_variables - log_num_workers,
+            ..poly_aux_info.clone()
+        };
+
+        let master_poly_aux_info = Self::VPAuxInfo {
+            num_variables: log_num_workers,
+            ..poly_aux_info.clone()
+        };
+
+        let phase1 = worker_poly_aux_info.num_variables;
         let phase2 = master_poly_aux_info.num_variables;
 
-        if phase2 != master_channel.log_num_slaves() {
-            return Err(PolyIOPErrors::InvalidSlaveNumber)
+        if phase2 != master_channel.log_num_workers() {
+            return Err(PolyIOPErrors::InvalidWorkerNumber)
         }
 
         if phase1 + phase2 != poly_aux_info.num_variables {
@@ -222,31 +260,31 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         let mut challenge = None;
         let mut challenges = Vec::new();
         let mut prover_msgs = Vec::with_capacity(phase1 + phase2);
-        let eval_len = slave_poly_aux_info.max_degree + 1;
+        let eval_len = worker_poly_aux_info.max_degree + 1;
 
         // Phase 1: 
-        // 1. Master Prover sends the starting signal to the slaves, slaves return
+        // 1. Master Prover sends the starting signal to the workers, workers return
         //    their virtual polynomial aux info.
         // 2. Master Prover checks the aux info matches and sends challenges to the
-        //    slaves sequentially, and slaves return the prover messages. Master 
-        //    prover aggregates the slave prover messages to form the whole proof
+        //    workers sequentially, and workers return the prover messages. Master 
+        //    prover aggregates the worker prover messages to form the whole proof
         //    of the first phase.
-        // 3. At the last round, Master Prover sends the final challenge for slave
-        //    provers and slave provers send the evaluation of each mle at challenge
+        // 3. At the last round, Master Prover sends the final challenge for worker
+        //    provers and worker provers send the evaluation of each mle at challenge
         //    point to the master prover.
 
         master_channel.send(b"sum check starting signal")?;
 
-        let slave_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
+        let worker_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
 
-        slave_aux_infos.par_iter().map(|slave_aux_info| 
-            (slave_aux_info == slave_poly_aux_info).then_some(()).ok_or(PolyIOPErrors::SlaveNotMatching)
+        worker_aux_infos.par_iter().map(|worker_aux_info| 
+            (worker_aux_info == &worker_poly_aux_info).then_some(()).ok_or(PolyIOPErrors::WorkerNotMatching)
         ).collect::<Result<Vec<_>, _>>()?;
 
         for _ in 0..phase1 {
             master_channel.send(&challenge)?;
-            let slave_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
-            let evaluations = slave_prover_msgs.iter()
+            let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
+            let evaluations = worker_prover_msgs.iter()
                 .fold( vec![F::zero(); eval_len],
                     | ev1, ev2 | {
                         ev1.into_iter().zip(ev2.evaluations.iter())
@@ -284,7 +322,7 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
 
         let poly = VirtualPolynomial::new_from_raw(
             master_poly_aux_info.clone(),
-            master_poly_products.clone(),
+            poly_products.clone(),
             flattened_ml_extensions);
 
         // Phase 2:
@@ -292,8 +330,8 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         //   just as the original sum check protocol.
 
         challenge = None;
-        
-        // special situation: only one slave prover
+
+        // special situation: only one worker prover
         if phase2 == 0 {
             return Ok(IOPProof {
                 point: challenges,
@@ -321,22 +359,22 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         })
     }
 
-    fn prove_distributed_slave(
+    fn prove_worker(
         poly: &Self::VirtualPolynomial,
-        slave_channel: &impl SlaveProverChannel,
+        worker_channel: &impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
-        let start_data: [u8; 25] = slave_channel.recv()?;
+        let start_data: [u8; 25] = worker_channel.recv()?;
         if &start_data != b"sum check starting signal" {
             return Err(PolyIOPErrors::InvalidDistributedMessage)
         }
-        slave_channel.send(&poly.aux_info)?;
+        worker_channel.send(&poly.aux_info)?;
 
-        let mut challenge = slave_channel.recv()?;
+        let mut challenge = worker_channel.recv()?;
 
-        // special situation: slave got a constant polynomial
-        //    i.e., log slave number is the same as variable number
+        // special situation: worker got a constant polynomial
+        //    i.e., log worker number is the same as variable number
         if poly.aux_info.num_variables == 0 {
-            slave_channel.send(
+            worker_channel.send(
                 &poly.flattened_ml_extensions.iter()
                     .map(|mle| mle.evaluations[0])
                     .collect::<Vec<_>>()
@@ -348,9 +386,9 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
 
         for i in 0..poly.aux_info.num_variables {
             let prover_msg = IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
-            slave_channel.send(&prover_msg)?;
-            dbg!(format!("round {}, slave {}", i, slave_channel.slave_id()));
-            challenge = slave_channel.recv()?;
+            worker_channel.send(&prover_msg)?;
+            dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
+            challenge = worker_channel.recv()?;
         }
 
         let challenge = challenge.unwrap();
@@ -363,41 +401,15 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
             })
             .collect::<Vec<_>>();
 
-        slave_channel.send(&evaluations)?;
+        worker_channel.send(&evaluations)?;
         Ok(())
-    }
-
-    fn verify(
-        claimed_sum: F,
-        proof: &Self::SumCheckProof,
-        aux_info: &Self::VPAuxInfo,
-        transcript: &mut Self::Transcript,
-    ) -> Result<Self::SumCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "sum check verify");
-
-        transcript.append_serializable_element(b"aux info", aux_info)?;
-        let mut verifier_state = IOPVerifierState::verifier_init(aux_info);
-        for i in 0..aux_info.num_variables {
-            let prover_msg = proof.proofs.get(i).expect("proof is incomplete");
-            transcript.append_serializable_element(b"prover msg", prover_msg)?;
-            IOPVerifierState::verify_round_and_update_state(
-                &mut verifier_state,
-                prover_msg,
-                transcript,
-            )?;
-        }
-
-        let res = IOPVerifierState::check_and_generate_subclaim(&verifier_state, &claimed_sum);
-
-        end_timer!(start);
-        res
     }
 }
 
 #[cfg(test)]
 mod test {
 
-    use crate::new_master_slave_thread_channels;
+    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Fr;
@@ -483,36 +495,29 @@ mod test {
         let mut rng = test_rng();
         let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
 
-        let (master_channel, slave_channels) = new_master_slave_thread_channels(n_log_provers);
+        let (master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
 
-        let (poly, distributed_poly, asserted_sum) =
-            VirtualPolynomial::<Fr>::rand_distributed(n_log_provers, nv, num_multiplicands_range, num_products, &mut rng)?;
-        let master_poly_aux_info = VPAuxInfo {
-            num_variables: n_log_provers,
-            ..poly.aux_info.clone()
-        };
-        let slave_poly_aux_info = VPAuxInfo {
-            num_variables: nv - n_log_provers,
-            ..poly.aux_info.clone()
-        };
-    
-        let slave_handles = slave_channels.into_iter()
+        let (poly, asserted_sum) =
+            VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
+        
+        let distributed_poly = poly.distribute(n_log_provers)?;
+
+        let worker_handles = worker_channels.into_iter()
             .zip(distributed_poly)
             .map( |(ch, poly)| 
                 (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
             )
             .map( |(ch, aux_info, products, mles)| {
                 spawn(move || {
-                    <PolyIOP<Fr> as SumCheck<Fr>>::prove_distributed_slave(
+                    <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_worker(
                         &VirtualPolynomial::new_from_raw(aux_info, products, mles), &ch)
                 })
             }).collect::<Vec<_>>();
         
-        let proof = <PolyIOP<Fr> as SumCheck<Fr>>::prove_distributed_master(
-            &poly.aux_info, &master_poly_aux_info, &poly.products, 
-            &slave_poly_aux_info, &mut transcript, &master_channel)?;
+        let proof = <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_master(
+            &poly.aux_info, &poly.products, n_log_provers, &mut transcript, &master_channel)?;
         
-        slave_handles.into_iter().map(|x| x.join().unwrap())
+        worker_handles.into_iter().map(|x| x.join().unwrap())
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
@@ -538,8 +543,8 @@ mod test {
         let num_multiplicands_range = (1, 3);
         let num_products = 5;
         
-        let (poly, distributed_poly, _) = VirtualPolynomial::<Fr>::rand_distributed(
-            n_log_provers, nv, num_multiplicands_range, num_products, &mut rng)?;
+        let (poly, _) = VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
+        let distributed_poly = poly.distribute(n_log_provers)?;
         
         assert_eq!(
             poly.evaluate(&vec![Fr::from(0); nv])?,
