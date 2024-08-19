@@ -257,7 +257,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
     fn commit_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         _handle: &Self::MasterPolynomialHandle,
-        master_channel: &impl crate::MasterProverChannel
+        master_channel: &impl MasterProverChannel,
     ) -> Result<Self::Commitment, PCSError> {
         let master_num_vars = master_prover_param.borrow().num_vars;
 

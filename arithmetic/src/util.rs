@@ -64,6 +64,17 @@ pub(crate) fn project(input: &[bool]) -> u64 {
     res
 }
 
+pub fn transpose<T>(input: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let m = input[0].len();
+    let mut iters = input.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>();
+    (0..m)
+        .map(|_| iters
+            .iter_mut()
+            .map(|x| x.next().unwrap())
+            .collect::<Vec<_>>()
+        ).collect::<Vec<_>>()
+}
+
 #[cfg(test)]
 mod test {
     use super::{bit_decompose, get_index, project};

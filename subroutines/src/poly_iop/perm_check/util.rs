@@ -73,3 +73,51 @@ pub(super) fn computer_nums_and_denoms<F: PrimeField>(
     end_timer!(start);
     Ok((numerators, denominators))
 }
+
+#[allow(clippy::type_complexity)]
+pub(super) fn computer_nums_and_denoms_with_ids<F: PrimeField>(
+    beta: &F,
+    gamma: &F,
+    fxs: &[Arc<DenseMultilinearExtension<F>>],
+    gxs: &[Arc<DenseMultilinearExtension<F>>],
+    ids: &[Arc<DenseMultilinearExtension<F>>],
+    perms: &[Arc<DenseMultilinearExtension<F>>],
+) -> Result<
+    (
+        Vec<Arc<DenseMultilinearExtension<F>>>,
+        Vec<Arc<DenseMultilinearExtension<F>>>,
+    ),
+    PolyIOPErrors,
+> {
+    let start = start_timer!(|| "compute numerators and denominators");
+
+    let num_vars = fxs[0].num_vars;
+    let mut numerators = vec![];
+    let mut denominators = vec![];
+    for l in 0..fxs.len() {
+        let mut numerator_evals = vec![];
+        let mut denominator_evals = vec![];
+
+        for (&f_ev, (&g_ev, (&id, &perm_ev))) in fxs[l]
+            .iter()
+            .zip(gxs[l].iter().zip(ids[l].iter().zip(perms[l].iter())))
+        {
+            let numerator = f_ev + *beta * id + gamma;
+            let denominator = g_ev + *beta * perm_ev + gamma;
+
+            numerator_evals.push(numerator);
+            denominator_evals.push(denominator);
+        }
+        numerators.push(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+            num_vars,
+            numerator_evals,
+        )));
+        denominators.push(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+            num_vars,
+            denominator_evals,
+        )));
+    }
+
+    end_timer!(start);
+    Ok((numerators, denominators))
+}

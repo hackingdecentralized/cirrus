@@ -152,6 +152,7 @@ where
     type ProductCheckSubClaim;
     type ProductCheckProof;
 
+    #[allow(clippy::type_complexity)]
     fn prove_master(
         pcs_param_master: &PCS::MasterProverParam,
         num_polys: usize,
@@ -160,6 +161,7 @@ where
         master_channel: &impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors>;
 
+    #[allow(clippy::type_complexity)]
     fn prove_worker(
         pcs_param_worker: &PCS::WorkerProverParam,
         fxs: &[Self::MultilinearExtension],
