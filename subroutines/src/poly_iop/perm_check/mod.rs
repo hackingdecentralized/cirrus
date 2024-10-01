@@ -272,13 +272,14 @@ where
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
 
         master_channel.send(&(beta, gamma))?;
-        let (proof, prod_master) = <Self as ProductCheckDistributed<E, PCS>>::prove_master(
-            pcs_param_master,
-            num_polys,
-            num_vars,
-            transcript,
-            master_channel,
-        )?;
+        let (proof, prod_master) =
+            <Self as ProductCheckDistributed<E, PCS>>::prove_master(
+                pcs_param_master,
+                num_polys,
+                num_vars,
+                transcript,
+                master_channel,
+            )?;
         
         end_timer!(start);
         Ok((proof, prod_master))

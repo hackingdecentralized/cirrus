@@ -227,6 +227,7 @@ where
             &pk.permutation_oracles,
             &mut transcript,
         )?;
+
         let perm_check_point = &perm_check_proof.zero_check_proof.point;
 
         end_timer!(step);

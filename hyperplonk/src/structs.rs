@@ -13,8 +13,8 @@ use ark_poly::DenseMultilinearExtension;
 use ark_std::log2;
 use std::sync::Arc;
 use subroutines::{
-    pcs::PolynomialCommitmentScheme,
-    poly_iop::prelude::{PermutationCheck, ZeroCheck},
+    pcs::{PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed},
+    poly_iop::prelude::{PermutationCheck, ZeroCheck}, PermutationCheckDistributed,
 };
 
 /// The proof for the HyperPlonk PolyIOP, consists of the following:
@@ -157,4 +157,44 @@ pub struct HyperPlonkVerifyingKey<E: Pairing, PCS: PolynomialCommitmentScheme<E>
     pub selector_commitments: Vec<PCS::Commitment>,
     /// Permutation oracles' commitments
     pub perm_commitments: Vec<PCS::Commitment>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HyperPlonkProofDistributed<E, PC, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+    PC: PermutationCheckDistributed<E, PCS>,
+{
+    pub witness_commits: Vec<PCS::Commitment>,
+    // TODO
+    // pub batch_openings: PCS::BatchProof,
+    pub evaluations: Vec<PCS::Evaluation>,
+    pub zero_check_proof: <PC as ZeroCheck<E::ScalarField>>::ZeroCheckProof,
+    pub perm_check_proof: PC::PermutationProof,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HyperPlonkProvingKeyMaster<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+{
+    pub params: HyperPlonkParams,
+    pub selector_commitments: Vec<PCS::Commitment>,
+    pub permutation_commitments: Vec<PCS::Commitment>,
+    pub pcs_param: PCS::MasterProverParam,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HyperPlonkProvingKeyWorker<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+{
+    pub params: HyperPlonkParams,
+    pub selector_oracles: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>>,
+    pub perm_oracles: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>>,
+    pub id_oracles: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>>,
+    pub pcs_param: PCS::WorkerProverParam,
 }

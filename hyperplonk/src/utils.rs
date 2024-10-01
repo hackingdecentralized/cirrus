@@ -8,12 +8,12 @@ use crate::{
     custom_gate::CustomizedGates, errors::HyperPlonkErrors, structs::HyperPlonkParams,
     witness::WitnessColumn,
 };
-use arithmetic::{evaluate_opt, VirtualPolynomial};
+use arithmetic::{evaluate_opt, transpose, VPAuxInfo, VirtualPolynomial};
 use ark_ec::pairing::Pairing;
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
-use std::{borrow::Borrow, sync::Arc};
-use subroutines::pcs::{prelude::Commitment, PolynomialCommitmentScheme};
+use std::{borrow::Borrow, marker::PhantomData, sync::Arc};
+use subroutines::{pcs::{prelude::Commitment, PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, MasterProverChannel, WorkerProverChannel};
 use transcript::IOPTranscript;
 
 /// An accumulator structure that holds a polynomial and
@@ -87,6 +87,146 @@ where
             self.evals.as_ref(),
             transcript,
         )?)
+    }
+}
+
+#[derive(Debug)]
+pub struct PcsAccumulatorMaster<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+{
+    pub num_var: usize,
+    pub log_num_workers: usize,
+    pub points: Vec<PCS::Point>,
+    pub evals: Vec<E::ScalarField>,
+}
+
+impl<E, PCS> PcsAccumulatorMaster<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<
+        E,
+        Polynomial = Arc<DenseMultilinearExtension<E::ScalarField>>,
+        Point = Vec<E::ScalarField>,
+        Evaluation = E::ScalarField,
+        Commitment = Commitment<E>,
+        MasterPolynomialHandle = usize,
+        WorkerPolynomialHandle = Arc<DenseMultilinearExtension<E::ScalarField>>,
+    >,
+{
+    pub fn new(num_var: usize, log_num_workers: usize) -> Self {
+        Self {
+            num_var,
+            log_num_workers,
+            points: vec![],
+            evals: vec![],
+        }
+    }
+
+    pub fn insert_point(
+        &mut self,
+        point: PCS::Point,
+    ) {
+        assert!(point.len() == self.num_var);
+        self.points.push(point);
+    }
+
+    pub fn eval_poly_and_points(
+        &mut self,
+        master_channel: &impl MasterProverChannel
+    ) -> Result<(), HyperPlonkErrors> {
+        let worker_num_vars = self.num_var - self.log_num_workers;
+        let mut worker_points = Vec::new();
+        for point in self.points.iter() {
+            let (worker_point, _) = point.split_at(worker_num_vars);
+            worker_points.push(worker_point.to_vec());
+        }
+
+        master_channel.send(&worker_points)?;
+        let evals: Vec<Vec<PCS::Evaluation>> = master_channel.recv()?;
+        let evals = transpose(evals).into_iter().zip(self.points.iter())
+            .map(|(evals, point)| {
+                
+                let (_, master_point) = point.split_at(worker_num_vars);
+                evaluate_opt(
+                    &DenseMultilinearExtension::from_evaluations_vec(self.log_num_workers, evals),
+                    master_point,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        self.evals = evals;
+        Ok(())
+    }
+
+    pub fn multi_open(
+        &self,
+        prover_param: impl Borrow<PCS::MasterProverParam>,
+        transcript: &mut IOPTranscript<E::ScalarField>,
+        master_channel: &impl MasterProverChannel,
+    ) -> Result<PCS::BatchProof, HyperPlonkErrors> {
+        unimplemented!()
+    }
+}
+
+pub struct PcsAccumulatorWorker<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+{
+    pub num_var: usize,
+    pub polynomials: Vec<PCS::WorkerPolynomialHandle>,
+    // pub evals: Vec<E::ScalarField>,
+}
+
+impl<E, PCS> PcsAccumulatorWorker<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<
+        E,
+        Polynomial = Arc<DenseMultilinearExtension<E::ScalarField>>,
+        Point = Vec<E::ScalarField>,
+        Evaluation = E::ScalarField,
+        Commitment = Commitment<E>,
+        MasterPolynomialHandle = usize,
+        WorkerPolynomialHandle = Arc<DenseMultilinearExtension<E::ScalarField>>,
+    >,
+{
+    pub fn new(num_var: usize) -> Self {
+        Self {
+            num_var,
+            polynomials: vec![],
+            // evals: vec![],
+        }
+    }
+
+    pub fn insert_poly(
+        &mut self,
+        poly: &PCS::WorkerPolynomialHandle,
+    ) {
+        assert!(poly.num_vars == self.num_var);
+        self.polynomials.push(poly.clone());
+    }
+
+    pub fn eval_poly_and_points(
+        &mut self,
+        worker_channel: &impl WorkerProverChannel
+    ) -> Result<(), HyperPlonkErrors> {
+        let points: Vec<PCS::Point> = worker_channel.recv()?;
+        let evals = points.iter().zip(self.polynomials.iter())
+            .map(|(point, poly)| evaluate_opt(poly, point))
+            .collect::<Vec<_>>();
+        worker_channel.send(&evals)?;
+        Ok(())
+    }
+
+    pub fn multi_open(
+        &self,
+        prover_param: impl Borrow<PCS::WorkerProverParam>,
+        worker_channel: &impl WorkerProverChannel,
+    ) -> Result<(), HyperPlonkErrors> {
+        unimplemented!()
     }
 }
 
@@ -253,6 +393,84 @@ pub(crate) fn eval_f<F: PrimeField>(
     Ok(res)
 }
 
+pub(crate) fn build_f_product<F: PrimeField>(
+    gates: &CustomizedGates,
+) -> Vec<(F, Vec<usize>)> {
+    let mut res = Vec::new();
+    let num_witness_columns = gates.num_witness_columns();
+    for (coeff, selector, witnesses) in gates.gates.iter() {
+        let coeff_fr = if *coeff < 0 {
+            -F::from(-*coeff as u64)
+        } else {
+            F::from(*coeff as u64)
+        };
+        let mut products = witnesses.clone();
+        if let Some(s) = *selector {
+            products.push(s + num_witness_columns);
+        }
+        res.push((coeff_fr, products));
+    }
+    res
+}
+
+pub(crate) fn build_f_raw<F: PrimeField>(
+    gates: &CustomizedGates,
+    num_vars: usize,
+    selector_mles: &[Arc<DenseMultilinearExtension<F>>],
+    witness_mles: &[Arc<DenseMultilinearExtension<F>>],
+) -> Result<VirtualPolynomial<F>, HyperPlonkErrors> {
+    let aux_info = VPAuxInfo {
+        max_degree: gates.degree(),
+        num_variables: num_vars,
+        phantom: PhantomData::default(),
+    };
+
+    if gates.num_selector_columns() != selector_mles.len() {
+        return Err(HyperPlonkErrors::InvalidParameters(format!(
+            "selector has different number of columns: {} vs {}",
+            gates.num_selector_columns(),
+            selector_mles.len()
+        )));
+    }
+
+    if gates.num_witness_columns() != witness_mles.len() {
+        return Err(HyperPlonkErrors::InvalidParameters(format!(
+            "witness has different number of columns: {} vs {}",
+            gates.num_witness_columns(),
+            witness_mles.len()
+        )));
+    }
+
+    for selector_mle in selector_mles.iter() {
+        if selector_mle.num_vars != num_vars {
+            return Err(HyperPlonkErrors::InvalidParameters(format!(
+                "selector has different number of vars: {} vs {}",
+                selector_mle.num_vars, num_vars
+            )));
+        }
+    }
+
+    for witness_mle in witness_mles.iter() {
+        if witness_mle.num_vars != num_vars {
+            return Err(HyperPlonkErrors::InvalidParameters(format!(
+                "selector has different number of vars: {} vs {}",
+                witness_mle.num_vars, num_vars
+            )));
+        }
+    }
+
+    let products = build_f_product(gates);
+
+    Ok(VirtualPolynomial::new_from_raw(
+        aux_info,
+        products,
+        witness_mles.iter()
+            .chain(selector_mles.iter())
+            .map(|x| x.clone())
+            .collect(),
+    ))
+}
+
 // check perm check subclaim:
 // proof.witness_perm_check_eval ?= perm_check_sub_claim.expected_eval
 // Q(x) := prod(x) - p1(x) * p2(x)
@@ -289,6 +507,55 @@ pub(crate) fn eval_perm_gate<F: PrimeField>(
     }
     let res =
         prod_evals[0] - p1_eval * p2_eval + alpha * (frac_evals[0] * g_prod_eval - f_prod_eval);
+    Ok(res)
+}
+
+// check distributed permutation check subclaim:
+// proof.witness_perm_check_eval ?= perm_check_sub_claim.expected_eval
+// Q(x) := alpha2 * prod_master(x) - alpha2 * p1_master(x) * p2_master(x)
+//       + alpha1 * prod_worker(x) - alpha1 * p1_worker(x) * p2_worker(x)
+//       + frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
+// where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
+//       p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
+//       p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 0)
+//       p2_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
+//       gi(x) = (wi(x) + beta * perms_i(x) + gamma)
+//       fi(x) = (wi(x) + beta * s_id_i(x) + gamma)
+//       t = log2(num_workers)
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn eval_perm_gate_distributed<F: PrimeField> (
+    prod_master_evals: &[F],
+    prod_worker_evals: &[F],
+    frac_evals: &[F],
+    perm_evals: &[F],
+    id_evals: &[F],
+    witness_perm_evals: &[F],
+    alpha1: F,
+    alpha2: F,
+    beta: F,
+    gamma: F,
+    x1: F,
+    x_t_1: F,
+) -> Result<F, HyperPlonkErrors> {
+    let p1_master_eval = (F::one() - x1) * prod_worker_evals[0] + x1 * prod_master_evals[1];
+    let p2_master_eval = (F::one() - x1) * prod_worker_evals[1] + x1 * prod_master_evals[2];
+    
+    let p1_worker_eval = (F::one() - x_t_1) * frac_evals[1] + x_t_1 * prod_worker_evals[3];
+    let p2_worker_eval = (F::one() - x_t_1) * frac_evals[2] + x_t_1 * prod_worker_evals[4];
+
+    let mut f = F::one();
+    for (&w_eval, &id_eval) in witness_perm_evals.iter().zip(id_evals.iter()) {
+        f *= w_eval + beta * id_eval + gamma;
+    }
+    let mut g = F::one();
+    for (&w_eval, &perm_eval) in witness_perm_evals.iter().zip(perm_evals.iter()) {
+        g *= w_eval + beta * perm_eval + gamma;
+    }
+
+    let res = alpha2 * (prod_master_evals[0] - p1_master_eval * p2_master_eval)
+        + alpha1 * (prod_worker_evals[2] - p1_worker_eval * p2_worker_eval)
+        + frac_evals[0] * g - f;
+
     Ok(res)
 }
 

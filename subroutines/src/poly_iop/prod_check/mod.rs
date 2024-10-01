@@ -517,7 +517,7 @@ where
 
         end_timer!(start);
         
-        Ok((frac_poly, prod_worker))
+        Ok((prod_worker, frac_poly))
     }
 
     fn verify(
