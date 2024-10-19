@@ -4,16 +4,18 @@ use errors::DistributedError;
 mod errors;
 pub mod prelude;
 mod thread_channel;
+mod network_channel;
+mod channel_enum;
 
 pub trait MasterProverChannel {
     /// TODO
-    fn send(&self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError>;
+    fn send(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError>;
 
     /// TODO
-    fn send_all<T: CanonicalSerialize + Send>(&self, msg: Vec<T>) -> Result<(), DistributedError>;
+    fn send_all<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError>;
     
     /// TODO
-    fn recv<T: CanonicalDeserialize + Send>(&self) -> Result<Vec<T>, DistributedError>;
+    fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError>;
 
     /// TODO
     fn log_num_workers(&self) -> usize;
@@ -21,10 +23,10 @@ pub trait MasterProverChannel {
 
 pub trait WorkerProverChannel {
     /// TODO
-    fn send(&self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError>;
+    fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError>;
     
     /// TODO
-    fn recv<T: CanonicalDeserialize>(&self) -> Result<T, DistributedError>;
+    fn recv<T: CanonicalDeserialize>(&mut self) -> Result<T, DistributedError>;
 
     /// TODO
     fn worker_id(&self) -> usize;

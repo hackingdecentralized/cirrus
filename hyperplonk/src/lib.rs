@@ -100,12 +100,12 @@ where
         pub_input: &[E::ScalarField],
         witnesses: &[WitnessColumn<E::ScalarField>],
         log_num_worker: usize,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors>;
 
     fn prove_worker(
         pk: &Self::ProvingKeyWorker,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors>;
 
     fn verify(

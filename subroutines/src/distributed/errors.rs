@@ -12,6 +12,8 @@ pub enum DistributedError {
     WorkerSendError,
     /// Worker prover failed to receive message
     WorkerRecvError,
+    /// Channel creat error
+    ChCreateError,
 }
 
 impl From<ark_serialize::SerializationError> for DistributedError {

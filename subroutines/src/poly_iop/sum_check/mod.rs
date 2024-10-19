@@ -66,12 +66,12 @@ pub trait SumCheckDistributed<F: PrimeField>: SumCheck<F> {
         poly_products: &Vec<(F, Vec<usize>)>,
         log_num_workers: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
 
     fn prove_worker(
         poly: &Self::VirtualPolynomial,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors>;
 }
 
@@ -230,7 +230,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         poly_products: &Vec<(F, Vec<usize>)>,
         log_num_workers: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
         let start = start_timer!(|| "sum check master prover prove");
 
@@ -361,7 +361,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
     fn prove_worker(
         poly: &Self::VirtualPolynomial,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
         let start_data: [u8; 25] = worker_channel.recv()?;
         if &start_data != b"sum check starting signal" {
@@ -495,7 +495,7 @@ mod test {
         let mut rng = test_rng();
         let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
 
-        let (master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
+        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
 
         let (poly, asserted_sum) =
             VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
@@ -504,18 +504,18 @@ mod test {
 
         let worker_handles = worker_channels.into_iter()
             .zip(distributed_poly)
-            .map( |(ch, poly)| 
+            .map( |(mut ch, poly)| 
                 (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
             )
-            .map( |(ch, aux_info, products, mles)| {
+            .map( |(mut ch, aux_info, products, mles)| {
                 spawn(move || {
                     <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_worker(
-                        &VirtualPolynomial::new_from_raw(aux_info, products, mles), &ch)
+                        &VirtualPolynomial::new_from_raw(aux_info, products, mles), &mut ch)
                 })
             }).collect::<Vec<_>>();
         
         let proof = <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_master(
-            &poly.aux_info, &poly.products, n_log_provers, &mut transcript, &master_channel)?;
+            &poly.aux_info, &poly.products, n_log_provers, &mut transcript, &mut master_channel)?;
         
         worker_handles.into_iter().map(|x| x.join().unwrap())
             .collect::<Result<Vec<_>, _>>()?;

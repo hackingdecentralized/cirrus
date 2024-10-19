@@ -257,7 +257,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
     fn commit_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         _handle: &Self::MasterPolynomialHandle,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::Commitment, PCSError> {
         let master_num_vars = master_prover_param.borrow().num_vars;
 
@@ -281,7 +281,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
     fn commit_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel
     ) -> Result<(), PCSError> {
         let worker_prover_param = worker_prover_param.borrow();
         let commit_timer = start_timer!(|| "commit");
@@ -320,7 +320,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
         point: &Self::Point,
-        master_channel: &impl MasterProverChannel
+        master_channel: &mut impl MasterProverChannel
     ) -> Result<(Self::Proof, Self::Evaluation), PCSError> {
         let master_num_vars = master_prover_param.borrow().num_vars;
         let worker_num_vars = *handle - master_num_vars;
@@ -379,7 +379,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
     fn open_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel
     ) -> Result<(), PCSError> {
         if worker_prover_param.borrow().num_vars != poly.num_vars {
             return Err(PCSError::InvalidParameters(format!(
@@ -594,21 +594,21 @@ mod tests {
         let (ck, vk) = MultilinearKzgPCS::trim(params, None, Some(nv))?;
 
         let (master_ck, worker_ck) = MultilinearKzgPCS::prover_param_distributed(ck, n_log_worker)?;
-        let (master_channel, worker_channel) = new_master_worker_thread_channels(n_log_worker);
+        let (mut master_channel, worker_channel) = new_master_worker_thread_channels(n_log_worker);
 
         let handles: Vec<_> = worker_ck.into_iter()
             .zip(polys)
             .zip(worker_channel)
-            .map(|((ck, poly), ch)| {
+            .map(|((ck, poly), mut ch)| {
                 spawn(move || {
-                    MultilinearKzgPCS::commit_distributed_worker(&ck, &poly, &ch)?;
-                    MultilinearKzgPCS::open_distributed_worker(&ck, &poly, &ch)
+                    MultilinearKzgPCS::commit_distributed_worker(&ck, &poly, &mut ch)?;
+                    MultilinearKzgPCS::open_distributed_worker(&ck, &poly, &mut ch)
                 })
             }).collect();
 
-        let com = MultilinearKzgPCS::commit_distributed_master(&master_ck, &nv, &master_channel)?;
+        let com = MultilinearKzgPCS::commit_distributed_master(&master_ck, &nv, &mut master_channel)?;
         let point: Vec<_> = (0..nv).map(|_| Fr::rand(rng)).collect();
-        let (proof, value) = MultilinearKzgPCS::open_distributed_master(&master_ck, &nv, &point, &master_channel)?;
+        let (proof, value) = MultilinearKzgPCS::open_distributed_master(&master_ck, &nv, &point, &mut master_channel)?;
 
         handles.into_iter().map(|x| x.join().unwrap())
             .collect::<Result<Vec<_>, PCSError>>()?;

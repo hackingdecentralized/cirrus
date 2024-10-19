@@ -158,7 +158,7 @@ where
         num_polys: usize,
         num_vars: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors>;
 
     #[allow(clippy::type_complexity)]
@@ -166,7 +166,7 @@ where
         pcs_param_worker: &PCS::WorkerProverParam,
         fxs: &[Self::MultilinearExtension],
         gxs: &[Self::MultilinearExtension],
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors>;
     
     fn verify(
@@ -326,7 +326,7 @@ where
         num_polys: usize,
         num_vars: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer!(|| "prod_check master prove");
         let log_num_workers = master_channel.log_num_workers();
@@ -415,7 +415,7 @@ where
         pcs_param_worker: &PCS::WorkerProverParam,
         fxs: &[Self::MultilinearExtension],
         gxs: &[Self::MultilinearExtension],
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer!(|| "prod_check worker prove");
 
@@ -689,7 +689,7 @@ mod test {
         >,
     {
         let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_param, log_num_workers)?;
-        let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
         let mut transcript = <PolyIOP<E::ScalarField> as ProductCheck<E, PCS>>::init_transcript();
         let num_polys = fs[0].len();
@@ -698,13 +698,13 @@ mod test {
 
         let handles = worker_channels.into_iter().zip(pcs_param_worker.into_iter())
             .zip(fs.into_iter().zip(gs.into_iter()))
-            .map(|((ch, pcs_param), (fs, gs))| {
+            .map(|((mut ch, pcs_param), (fs, gs))| {
                 spawn(move || {
                     let (frac, _) = <PolyIOP<E::ScalarField> as ProductCheckDistributed<E, PCS>>::prove_worker(
                         &pcs_param,
                         &fs,
                         &gs,
-                        &ch,
+                        &mut ch,
                     )?;
                     check_frac_poly::<E>(&frac, &fs, &gs);
                     Ok::<(), PolyIOPErrors>(())
@@ -716,7 +716,7 @@ mod test {
             num_polys,
             num_vars,
             &mut transcript,
-            &master_channel,
+            &mut master_channel,
         )?;
 
         handles.into_iter().map(|h| h.join().unwrap()).collect::<Result<Vec<_>, _>>()?;

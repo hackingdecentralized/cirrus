@@ -148,26 +148,26 @@ pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmen
     fn commit_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
-        master_channel: &impl MasterProverChannel
+        master_channel: &mut impl MasterProverChannel
     ) -> Result<Self::Commitment, PCSError>;
 
     fn commit_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel
     ) -> Result<(), PCSError>;
 
     fn open_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
         point: &Self::Point,
-        master_channel: &impl MasterProverChannel
+        master_channel: &mut impl MasterProverChannel
     ) -> Result<(Self::Proof, Self::Evaluation), PCSError>;
 
     fn open_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel
     ) -> Result<(), PCSError>;
 }
 

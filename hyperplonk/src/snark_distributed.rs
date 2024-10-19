@@ -135,7 +135,7 @@ where
         pub_input: &[E::ScalarField],
         witnesses: &[WitnessColumn<E::ScalarField>],
         log_num_workers: usize,
-        master_channel: &impl subroutines::MasterProverChannel,
+        master_channel: &mut impl subroutines::MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors> {
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"cirrus");
 
@@ -282,7 +282,7 @@ where
 
     fn prove_worker(
         pk: &Self::ProvingKeyWorker,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
         let num_vars = pk.selector_oracles[0].num_vars();
         let mut pcs_acc = PcsAccumulatorWorker::<E, PCS>::new(num_vars);
@@ -549,7 +549,7 @@ mod tests {
             selectors: vec![q],
         };
 
-        let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
         let ((pk_master, pk_workers), vk) =
             PolyIOP::<E::ScalarField>::preprocess(&index, log_num_workers, &pcs_srs)?;
@@ -557,9 +557,9 @@ mod tests {
         let worker_handles = pk_workers
             .into_iter()
             .zip(worker_channels.into_iter())
-            .map(|(pk, channel)| {
+            .map(|(pk, mut channel)| {
                 spawn(move || {
-                    <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(&pk, &channel)
+                    <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(&pk, &mut channel)
                 })
             }).collect::<Vec<_>>();
 
@@ -568,7 +568,7 @@ mod tests {
             w1.clone().0[..num_pub_input].as_ref(),
             &[w1.clone(), w2],
             log_num_workers,
-            &master_channel,
+            &mut master_channel,
         )?;
 
         for handle in worker_handles {
