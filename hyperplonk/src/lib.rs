@@ -8,7 +8,7 @@
 
 use ark_ec::pairing::Pairing;
 use errors::HyperPlonkErrors;
-use subroutines::{pcs::prelude::PolynomialCommitmentScheme, poly_iop::prelude::PermutationCheck};
+use subroutines::{pcs::{prelude::PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, poly_iop::prelude::PermutationCheck, MasterProverChannel, PermutationCheckDistributed, WorkerProverChannel};
 use witness::WitnessColumn;
 
 mod custom_gate;
@@ -17,6 +17,7 @@ mod mock;
 pub mod prelude;
 mod selectors;
 mod snark;
+mod snark_distributed;
 mod structs;
 mod utils;
 mod witness;
@@ -70,6 +71,43 @@ where
     /// - `proof`: HyperPlonk SNARK proof challenges
     /// Outputs:
     /// - Return a boolean on whether the verification is successful
+    fn verify(
+        vk: &Self::VerifyingKey,
+        pub_input: &[E::ScalarField],
+        proof: &Self::Proof,
+    ) -> Result<bool, HyperPlonkErrors>;
+}
+
+pub trait HyperPlonkSNARKDistributed<E, PCS>: PermutationCheckDistributed<E, PCS>
+where
+    E: Pairing,
+    PCS: PolynomialCommitmentSchemeDistributed<E>,
+{
+    type Index;
+    type ProvingKeyMaster;
+    type ProvingKeyWorker;
+    type VerifyingKey;
+    type Proof;
+
+    fn preprocess(
+        index: &Self::Index,
+        log_num_worker: usize,
+        pcs_srs: &PCS::SRS,
+    ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), HyperPlonkErrors>;
+
+    fn prove_master(
+        pk: &Self::ProvingKeyMaster,
+        pub_input: &[E::ScalarField],
+        witnesses: &[WitnessColumn<E::ScalarField>],
+        log_num_worker: usize,
+        master_channel: &mut impl MasterProverChannel,
+    ) -> Result<Self::Proof, HyperPlonkErrors>;
+
+    fn prove_worker(
+        pk: &Self::ProvingKeyWorker,
+        worker_channel: &mut impl WorkerProverChannel,
+    ) -> Result<(), HyperPlonkErrors>;
+
     fn verify(
         vk: &Self::VerifyingKey,
         pub_input: &[E::ScalarField],

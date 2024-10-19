@@ -6,6 +6,8 @@
 
 pub mod pcs;
 pub mod poly_iop;
+pub mod distributed;
 
 pub use pcs::prelude::*;
 pub use poly_iop::prelude::*;
+pub use distributed::prelude::*;

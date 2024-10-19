@@ -227,6 +227,7 @@ where
             &pk.permutation_oracles,
             &mut transcript,
         )?;
+
         let perm_check_point = &perm_check_proof.zero_check_proof.point;
 
         end_timer!(step);
@@ -719,7 +720,8 @@ mod tests {
             )?;
 
         // bad path 1: wrong permutation
-        let rand_perm: Vec<E::ScalarField> = random_permutation(nv, num_witnesses, &mut rng);
+        let rand_perm: Vec<E::ScalarField> = random_permutation(nv, num_witnesses, &mut rng)
+            .into_iter().map(E::ScalarField::from).collect();
         let mut bad_index = index;
         bad_index.permutation = rand_perm;
         // generate pk and vks

@@ -12,6 +12,8 @@ use ark_std::string::String;
 use displaydoc::Display;
 use transcript::TranscriptError;
 
+use crate::DistributedError;
+
 /// A `enum` specifying the possible failure modes of the PCS.
 #[derive(Display, Debug)]
 pub enum PCSError {
@@ -29,6 +31,8 @@ pub enum PCSError {
     TranscriptError(TranscriptError),
     /// ArithErrors error {0}
     ArithErrors(ArithErrors),
+    /// 
+    DistributedErrors(DistributedError),
 }
 
 impl From<SerializationError> for PCSError {
@@ -46,5 +50,11 @@ impl From<TranscriptError> for PCSError {
 impl From<ArithErrors> for PCSError {
     fn from(e: ArithErrors) -> Self {
         Self::ArithErrors(e)
+    }
+}
+
+impl From<DistributedError> for PCSError {
+    fn from(e: DistributedError) -> Self {
+        Self::DistributedErrors(e)
     }
 }

@@ -10,7 +10,7 @@ use ark_poly::MultilinearExtension;
 use ark_std::{end_timer, rand::RngCore, start_timer};
 #[cfg(feature = "parallel")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::sync::Arc;
+use std::{sync::Arc, cmp::min};
 
 pub use ark_poly::DenseMultilinearExtension;
 
@@ -48,6 +48,28 @@ pub fn random_mle_list<F: PrimeField, R: RngCore>(
 
     end_timer!(start);
     (list, sum)
+}
+
+/// Split a multilinear polynomial into a list of polynomials.
+/// Input: a multilinear polynomial `poly`
+///        a log of the number of chunks `log_num_chunks`
+/// Requires: variable of poly is larger than log_num_chunks
+pub fn split_into_chunks<F: PrimeField>(
+    poly: &Arc<DenseMultilinearExtension<F>>,
+    log_num_chunks: usize,
+) -> Vec<Arc<DenseMultilinearExtension<F>>> {
+    let nv = poly.num_vars();
+    let log_num_chunks = min(log_num_chunks, nv);
+    let num_chunks = 1 << log_num_chunks;
+    let mut res = vec![];
+    let n = 1 << (nv - log_num_chunks);
+    for i in 0..num_chunks {
+        res.push(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+            nv - log_num_chunks,
+            poly.evaluations[i * n..i * n + n].to_vec(),
+        )));
+    }
+    res
 }
 
 // Build a randomize list of mle-s whose sum is zero.
@@ -99,13 +121,13 @@ pub fn identity_permutation_mles<F: PrimeField>(
     res
 }
 
-pub fn random_permutation<F: PrimeField, R: RngCore>(
+pub fn random_permutation<R: RngCore>(
     num_vars: usize,
     num_chunks: usize,
     rng: &mut R,
-) -> Vec<F> {
+) -> Vec<u64> {
     let len = (num_chunks as u64) * (1u64 << num_vars);
-    let mut s_id_vec: Vec<F> = (0..len).map(F::from).collect();
+    let mut s_id_vec: Vec<u64> = (0..len).collect();
     let mut s_perm_vec = vec![];
     for _ in 0..len {
         let index = rng.next_u64() as usize % s_id_vec.len();
@@ -120,7 +142,8 @@ pub fn random_permutation_mles<F: PrimeField, R: RngCore>(
     num_chunks: usize,
     rng: &mut R,
 ) -> Vec<Arc<DenseMultilinearExtension<F>>> {
-    let s_perm_vec = random_permutation(num_vars, num_chunks, rng);
+    let s_perm_vec: Vec<_> = random_permutation(num_vars, num_chunks, rng)
+        .iter().cloned().map(F::from).collect();
     let mut res = vec![];
     let n = 1 << num_vars;
     for i in 0..num_chunks {
@@ -130,6 +153,50 @@ pub fn random_permutation_mles<F: PrimeField, R: RngCore>(
         )));
     }
     res
+}
+
+pub fn random_permutation_with_corresponding_mles<F: PrimeField, R: RngCore>(
+    num_vars: usize,
+    num_chunks: usize,
+    rng: &mut R,
+) -> (
+    Vec<Arc<DenseMultilinearExtension<F>>>,
+    Vec<Arc<DenseMultilinearExtension<F>>>,
+    Vec<Arc<DenseMultilinearExtension<F>>>,
+) {
+    let total_num = num_chunks * (1 << num_vars);
+    let perm = random_permutation(num_vars, num_chunks, rng);
+    let mut set = vec![false; total_num];
+    let mut evals = vec![F::zero(); total_num];
+
+    for x in 0..total_num {
+        if set[x] {
+            continue;
+        }
+
+        let val = F::rand(rng);
+        evals[x] = val;
+        let mut cur = perm[x] as usize;
+        while cur != x {
+            evals[cur] = val;
+            set[cur] = true;
+            cur = perm[cur] as usize;
+        }
+    }
+
+    let res = (
+        (0..total_num).map(|x| F::from(x as u128)).collect::<Vec<_>>(),
+        perm.iter().cloned().map(F::from).collect::<Vec<_>>(), evals
+    );
+    
+    let f = |x: &Vec<F>| {
+        x.chunks(1 << num_vars)
+            .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_slice(num_vars, x)))
+            .collect()
+    };
+
+    (f(&res.0), f(&res.1), f(&res.2))
+
 }
 
 pub fn evaluate_opt<F: Field>(poly: &DenseMultilinearExtension<F>, point: &[F]) -> F {

@@ -10,7 +10,7 @@
 use crate::{errors::ArithErrors, multilinear_polynomial::random_zero_mle_list, random_mle_list};
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     end_timer,
     rand::{Rng, RngCore},
@@ -59,7 +59,7 @@ pub struct VirtualPolynomial<F: PrimeField> {
     raw_pointers_lookup_table: HashMap<*const DenseMultilinearExtension<F>, usize>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 /// Auxiliary information about the multilinear polynomial
 pub struct VPAuxInfo<F: PrimeField> {
     /// max number of multiplicands in each product
@@ -124,6 +124,19 @@ impl<F: PrimeField> VirtualPolynomial<F> {
             products: vec![(coefficient, vec![0])],
             flattened_ml_extensions: vec![mle.clone()],
             raw_pointers_lookup_table: hm,
+        }
+    }
+
+    pub fn new_from_raw(
+        aux_info: VPAuxInfo<F>,
+        products: Vec<(F, Vec<usize>)>,
+        flattened_ml_extensions: Vec<Arc<DenseMultilinearExtension<F>>>,
+    ) -> Self {
+        VirtualPolynomial {
+            aux_info,
+            products,
+            flattened_ml_extensions,
+            raw_pointers_lookup_table: HashMap::new(),
         }
     }
 
@@ -290,6 +303,33 @@ impl<F: PrimeField> VirtualPolynomial<F> {
         }
 
         Ok(poly)
+    }
+
+    /// Distribute the virtual polynomial into `n_log_provers` log provers.
+    pub fn distribute(&self, n_log_provers: usize) -> Result<Vec<Self>, ArithErrors> {
+        if n_log_provers > self.aux_info.num_variables {
+            return Err(ArithErrors::InvalidParameters(
+                "number of provers is greater than number of variables".to_string(),
+            ));
+        }
+
+        let nv_worker_provers = self.aux_info.num_variables - n_log_provers; // number of variables for worker provers
+
+        let distributed_poly: Vec<_> = (0..1<<n_log_provers).map( |i| {
+            let aux_info = VPAuxInfo {
+                num_variables: self.aux_info.num_variables - n_log_provers,
+                ..self.aux_info.clone()
+            };
+            let flattened_mle_extensions = self.flattened_ml_extensions
+                .iter()
+                .map(|x| x.evaluations[i*(1<<nv_worker_provers)..(i+1)*(1<<nv_worker_provers)].to_vec())
+                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(nv_worker_provers, x)))
+                .collect::<Vec<_>>();
+
+            VirtualPolynomial::new_from_raw(aux_info, self.products.clone(), flattened_mle_extensions)
+        }).collect();
+
+        Ok(distributed_poly)
     }
 
     // Input poly f(x) and a random vector r, output
