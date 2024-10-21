@@ -141,7 +141,7 @@ where
         num_polys: usize,
         num_vars: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors>;
 
     /// Worker prover protocol of the distributed permutation check. The worker
@@ -158,7 +158,7 @@ where
         gxs: &[Self::MultilinearExtension],
         ids: &[Self::MultilinearExtension],
         perms: &[Self::MultilinearExtension],
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors>;
 
     /// Verify a distributed version of permutation check proof and generate the
@@ -279,7 +279,7 @@ where
         num_polys: usize,
         num_vars: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer!(|| "Permutation check prove master");
         let log_num_workers = master_channel.log_num_workers();
@@ -314,7 +314,7 @@ where
         gxs: &[Self::MultilinearExtension],
         ids: &[Self::MultilinearExtension],
         perms: &[Self::MultilinearExtension],
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer!(|| "Permutation check prove worker");
         if fxs.is_empty() {
@@ -479,7 +479,7 @@ mod test {
         >,
     {
         let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_param, log_num_workers)?;
-        let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
         let mut transcript = <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
@@ -488,7 +488,7 @@ mod test {
 
         let handles = worker_channels.into_iter().zip(pcs_param_worker.into_iter())
             .zip(fs.into_iter().zip(gs.into_iter()).zip(ids.into_iter().zip(perms.into_iter())))
-            .map(|((ch, pcs_param), ((fs, gs), (ids, perms)))| {
+            .map(|((mut ch, pcs_param), ((fs, gs), (ids, perms)))| {
                 spawn(move || {
                     <PolyIOP<E::ScalarField> as PermutationCheckDistributed<E, PCS>>::prove_worker(
                         &pcs_param,
@@ -496,7 +496,7 @@ mod test {
                         &gs,
                         &ids,
                         &perms,
-                        &ch,
+                        &mut ch,
                     )
                 })
             }).collect::<Vec<_>>();
@@ -506,7 +506,7 @@ mod test {
             num_polys,
             num_vars,
             &mut transcript,
-            &master_channel,
+            &mut master_channel,
         )?;
 
         handles.into_iter().map(|h| h.join().unwrap()).collect::<Result<Vec<_>, _>>()?;

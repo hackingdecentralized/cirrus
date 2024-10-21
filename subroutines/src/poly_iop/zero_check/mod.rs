@@ -70,14 +70,14 @@ pub trait ZeroCheckDistributed<F: PrimeField>: ZeroCheck<F> + SumCheckDistribute
         poly_products: &Vec<(F, Vec<usize>)>,
         log_num_workers: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors>;
 
     /// The worker prover interacts with the master prover to form part of
     /// the zero check proof.
     fn prove_worker(
         poly: &Self::VirtualPolynomial,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors>;
 }
 
@@ -149,7 +149,7 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         poly_products: &Vec<(F, Vec<usize>)>,
         log_num_workers: usize,
         transcript: &mut Self::Transcript,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors> {
         let start = start_timer!(|| "Distributed zero check; master");
 
@@ -202,7 +202,7 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
 
     fn prove_worker(
         poly: &Self::VirtualPolynomial,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
         let timer = start_timer!(|| "Distributed zero check; worker");
 
@@ -321,17 +321,17 @@ mod test {
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            let (master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
+            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
                 .map( |(ch, poly)| {
                     (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
                 })
-                .map( |(ch, aux_info, products, mle)| {
+                .map( |(mut ch, aux_info, products, mle)| {
                     spawn(move || {
                         let poly = VirtualPolynomial::new_from_raw(aux_info, products, mle);
-                        <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_worker(&poly, &ch)
+                        <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_worker(&poly, &mut ch)
                     })
                 })
                 .collect();
@@ -341,7 +341,7 @@ mod test {
                 &poly.products,
                 n_log_provers,
                 &mut transcript,
-                &master_channel,
+                &mut master_channel,
             )?;
 
             worker_handles.into_iter().map( |h| h.join().unwrap()).collect::<Result<Vec<_>, _>>()?;
@@ -365,17 +365,17 @@ mod test {
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            let (master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
+            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
-                .map( |(ch, poly)| {
+                .map( |(mut ch, poly)| {
                     (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
                 })
-                .map( |(ch, aux_info, products, mle)| {
+                .map( |(mut ch, aux_info, products, mle)| {
                     spawn(move || {
                         let poly = VirtualPolynomial::new_from_raw(aux_info, products, mle);
-                        <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_worker(&poly, &ch)
+                        <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_worker(&poly, &mut ch)
                     })
                 })
                 .collect();
@@ -385,7 +385,7 @@ mod test {
                 &poly.products,
                 n_log_provers,
                 &mut transcript,
-                &master_channel,
+                &mut master_channel,
             )?;
 
             worker_handles.into_iter().map( |h| h.join().unwrap()).collect::<Result<Vec<_>, _>>()?;

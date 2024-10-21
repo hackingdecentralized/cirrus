@@ -134,7 +134,7 @@ where
 
     pub fn eval_poly_and_points(
         &mut self,
-        master_channel: &impl MasterProverChannel
+        master_channel: &mut impl MasterProverChannel
     ) -> Result<(), HyperPlonkErrors> {
         let worker_num_vars = self.num_var - self.log_num_workers;
         let mut worker_points = Vec::new();
@@ -211,7 +211,7 @@ where
 
     pub fn eval_poly_and_points(
         &mut self,
-        worker_channel: &impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel
     ) -> Result<(), HyperPlonkErrors> {
         let points: Vec<PCS::Point> = worker_channel.recv()?;
         let evals = points.iter().zip(self.polynomials.iter())
