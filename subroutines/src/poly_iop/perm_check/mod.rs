@@ -102,6 +102,9 @@ where
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors>;
 }
 
+/// A distributed version of PermutationCheck subclaim consists of
+/// - a distributed version of product check subclaim
+/// - challenges beta and gamma
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PermutationCheckSubClaimDistributed<E, PCS, PC>
 where
@@ -113,6 +116,10 @@ where
     pub challenges: (E::ScalarField, E::ScalarField),
 }
 
+/// Distributed permutation check IOP.
+/// It provides the same functionality as the PermutationCheck protocol
+/// but with its proof struct and subclaim struct a distributed version
+/// as it calls the distributed version of the ProductCheck protocol.
 pub trait PermutationCheckDistributed<E, PCS>: ProductCheckDistributed<E, PCS>
 where
     E: Pairing,
@@ -121,6 +128,13 @@ where
     type PermutationCheckSubClaim;
     type PermutationProof;
 
+    /// Master prover protocol of the distributed permutation check. The master
+    /// prover does not hold any polynomials at the beginning of the protocol.
+    /// It interacts with the worker provers for the product check PIOP.
+    /// 
+    /// Outputs:
+    /// - a distributed permutation check proof
+    /// - the prod_master polynomial
     #[allow(clippy::type_complexity)]
     fn prove_master(
         pcs_param_master: &PCS::MasterProverParam,
@@ -130,6 +144,13 @@ where
         master_channel: &impl MasterProverChannel,
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors>;
 
+    /// Worker prover protocol of the distributed permutation check. The worker
+    /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ..., gk),
+    /// (id1, ..., idk), and (perm1, ..., permk). 
+    /// 
+    /// Outputs:
+    /// - the prod_worker polynomial
+    /// - the frac polynomial
     #[allow(clippy::type_complexity)]
     fn prove_worker(
         pcs_param_worker: &PCS::WorkerProverParam,
@@ -140,6 +161,8 @@ where
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors>;
 
+    /// Verify a distributed version of permutation check proof and generate the
+    /// corresponding subclaim.
     fn verify(
         proof: &Self::PermutationProof,
         aux_info: &Self::VPAuxInfo,
@@ -280,7 +303,7 @@ where
                 transcript,
                 master_channel,
             )?;
-        
+
         end_timer!(start);
         Ok((proof, prod_master))
     }
@@ -345,17 +368,17 @@ where
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors> {
         let start = start_timer!(|| "Permutation check verify");
-        
+
         let beta = transcript.get_and_append_challenge(b"beta")?;
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
 
         let product_check_sub_claim =
             <Self as ProductCheckDistributed<E, PCS>>::verify(proof, aux_info, transcript)?;
-        
+
         if product_check_sub_claim.final_query.1 != E::ScalarField::one() {
             return Err(PolyIOPErrors::InvalidProof("final query is not one".to_string()));
         }
-        
+
         end_timer!(start);
         Ok(PermutationCheckSubClaimDistributed {
             product_check_sub_claim,
@@ -585,7 +608,7 @@ mod test {
 
         let srs = MultilinearKzgPCS::<Bls12_381>::gen_srs_for_testing(&mut rng, nv)?;
         let (pcs_param, _) = MultilinearKzgPCS::<Bls12_381>::trim(&srs, None, Some(nv))?;
-        
+
         {
             let (ids, perms, fs) = random_permutation_with_corresponding_mles(nv, 3, &mut rng);
             let gs = fs.clone();
@@ -645,6 +668,7 @@ mod test {
     fn test_trivial_polynomial() -> Result<(), PolyIOPErrors> {
         test_permutation_check(1)
     }
+
     #[test]
     fn test_normal_polynomial() -> Result<(), PolyIOPErrors> {
         test_permutation_check(5)?;

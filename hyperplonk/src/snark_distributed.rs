@@ -3,7 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 use arithmetic::{identity_permutation, split_into_chunks, transpose, VPAuxInfo};
 use ark_ec::pairing::Pairing;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_std::{log2, One, Zero};
+use ark_std::{log2, One, Zero, start_timer, end_timer};
 use rayon::iter::IntoParallelRefIterator;
 #[cfg(feature = "parallel")]
 use rayon::iter::ParallelIterator;
@@ -137,6 +137,8 @@ where
         log_num_workers: usize,
         master_channel: &impl subroutines::MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors> {
+        let start = start_timer!(|| "Cirrus; master");
+
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"cirrus");
 
         prover_sanity_check(&pk.params, pub_input, witnesses)?;
@@ -149,6 +151,12 @@ where
         let ell = log2(pk.params.num_pub_input) as usize;
 
         let mut pcs_acc = PcsAccumulatorMaster::<E, PCS>::new(num_vars, log_num_workers);
+
+        // =======================================================================
+        // 1. Master prover distributes the witness polynomials to workers and
+        //    commits to them
+        // =======================================================================
+        let step = start_timer!(|| "distribute and commit witnesses; master");
 
         assert!(num_vars >= log_num_workers + 1, "num_vars must be greater than log_num_workers");
         let witnesses_distribution = witnesses.iter()
@@ -165,7 +173,15 @@ where
             transcript.append_serializable_element(b"w", w_com)?;
         }
 
-        // zero check
+        end_timer!(step);
+
+        // =======================================================================
+        // 2. All provers run distributed zero check on
+        //          f(q_0(x),...q_l(x), w_0(x),...w_d(x))
+        // where f is the gate function
+        // =======================================================================
+
+        let step = start_timer!(|| "Distributed zero check on f; master");
 
         let aux_info = VPAuxInfo {
             max_degree: pk.params.gate_func.degree(),
@@ -181,7 +197,15 @@ where
             master_channel,
         )?;
 
-        // permutation check
+        end_timer!(step);
+
+        // =======================================================================
+        // 3. All provers run distributed permutation check on the witness
+        // polynomials and the permutation oracles.
+        // =======================================================================
+
+        let step = start_timer!(|| "Distributed permutation check on witnesses and permutations; master");
+
         let (perm_check_proof, prod_master) = <Self as PermutationCheckDistributed<E, PCS>>::prove_master(
             &pk.pcs_param,
             witnesses.len(),
@@ -192,7 +216,14 @@ where
 
         master_channel.send_all(prod_master.evaluations.clone())?;
 
-        // generate pcs batch proof
+        end_timer!(step);
+
+        // =======================================================================
+        // 4. generate pcs batch proof
+        // =======================================================================
+
+        let step = start_timer!(|| "generate pcs batch proof; master");
+
         let perm_check_point = perm_check_proof.zero_check_proof.point.clone();
         // prod_master 's points
         let point1 = perm_check_point.clone();
@@ -212,7 +243,7 @@ where
         pcs_acc.insert_point(point2);
         pcs_acc.insert_point(point3);
         pcs_acc.insert_point(point4);
-        
+
         // prod_worker 's points
         let point1 = [
             &[E::ScalarField::zero()],
@@ -272,6 +303,9 @@ where
         pcs_acc.eval_poly_and_points(master_channel)?;
         // TODO multiple open
 
+        end_timer!(step);
+
+        end_timer!(start);
         Ok(HyperPlonkProofDistributed {
             witness_commits,
             evaluations: pcs_acc.evals,
@@ -284,8 +318,15 @@ where
         pk: &Self::ProvingKeyWorker,
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
+        let start = start_timer!(|| "Cirrus; worker");
+
         let num_vars = pk.selector_oracles[0].num_vars();
         let mut pcs_acc = PcsAccumulatorWorker::<E, PCS>::new(num_vars);
+
+        // =======================================================================
+        // 1. Worker prover receives the witness polynomials and commits to them
+        // =======================================================================
+        let step = start_timer!(|| "distribute and commit witnesses; master");
 
         let witnesses: Vec<Vec<E::ScalarField>> = worker_channel.recv()?;
         let witness_polys = witnesses
@@ -297,7 +338,15 @@ where
             .map(|w| PCS::commit_distributed_worker(&pk.pcs_param, w, worker_channel))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // zero check
+        end_timer!(step);
+
+        // =======================================================================
+        // 2. Worker prover runs distributed zero check on
+        //          f(q_0(x),...q_l(x), w_0(x),...w_d(x))
+        // where f is the gate function
+        // =======================================================================
+        let step = start_timer!(|| "Distributed zero check on f; worker");
+
         let fx = build_f_raw(
             &pk.params.gate_func,
             num_vars,
@@ -310,7 +359,14 @@ where
             worker_channel,
         )?;
 
-        // permutation check
+        end_timer!(step);
+
+        // =======================================================================
+        // 3. Worker prover runs distributed permutation check on the witness
+        // polynomials and the permutation oracles.
+        // =======================================================================
+        let step = start_timer!(|| "Distributed permutation check on witnesses and permutations; worker");
+
         let (prod_worker, frac) = <Self as PermutationCheckDistributed<E, PCS>>::prove_worker(
             &pk.pcs_param,
             &witness_polys,
@@ -319,6 +375,14 @@ where
             &pk.perm_oracles,
             worker_channel,
         )?;
+
+        end_timer!(step);
+
+        // =======================================================================
+        // 4. generate pcs batch proof. Worker provers first insert their part of
+        // polynomials to the accumulator, and batch opening them with points from
+        // the master prover.
+        // =======================================================================
 
         let prod_master = {
             let f: E::ScalarField = worker_channel.recv()?;
@@ -359,6 +423,13 @@ where
         pcs_acc.eval_poly_and_points(worker_channel)?;
         // pcs_acc.multi_open(&pk.pcs_param, worker_channel)?;
 
+        end_timer!(step);
+
+        // =======================================================================
+        // Worker prover ends
+        // =======================================================================
+
+        end_timer!(start);
         Ok(())
     }
 
@@ -437,7 +508,7 @@ where
 
         let (alpha1, alpha2) = perm_check_subclaim.product_check_sub_claim.alpha;
         let (beta, gamma) = perm_check_subclaim.challenges;
-        
+
         let id1 = {
             let mut base = E::ScalarField::one();
             let mut res = E::ScalarField::zero();
@@ -479,7 +550,6 @@ where
 mod tests {
     use std::thread::spawn;
 
-    use arithmetic::identity_permutation;
     use ark_bls12_381::Bls12_381;
     use ark_std::{test_rng, One};
     use subroutines::{new_master_worker_thread_channels, MultilinearKzgPCS, PolynomialCommitmentScheme};
@@ -511,6 +581,7 @@ mod tests {
         let num_pub_input = 4;
         let log_num_workers = 1;
 
+        // q0 * w0^3 + (-1) * w1 = 0
         let gate_func = CustomizedGates {
             gates: vec![(1, Some(0), vec![0; 3]), (-1, None, vec![1])],
         };
@@ -553,7 +624,7 @@ mod tests {
 
         let ((pk_master, pk_workers), vk) =
             PolyIOP::<E::ScalarField>::preprocess(&index, log_num_workers, &pcs_srs)?;
-        
+
         let worker_handles = pk_workers
             .into_iter()
             .zip(worker_channels.into_iter())

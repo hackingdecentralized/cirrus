@@ -353,7 +353,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let evals: Vec<Self::Evaluation> = master_channel.recv()?;
         let master_poly =
             Arc::new(DenseMultilinearExtension::from_evaluations_vec(master_num_vars, evals));
-        
+
         let (proof, eval) = open_internal(master_prover_param.borrow(), &master_poly, master_points)?;
 
         let worker_proofs: Vec<MultilinearKzgProof<E>> = master_channel.recv()?;

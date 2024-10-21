@@ -59,7 +59,12 @@ pub trait ZeroCheck<F: PrimeField>: SumCheck<F> {
     ) -> Result<Self::ZeroCheckSubClaim, PolyIOPErrors>;
 }
 
+/// A distributed version of ZeroCheck Poly IOP generates zerocheck proof for
+/// `f(x) = 0` for all `x \in {0,1}^num_vars`. The sumcheck protocol called
+/// is distributed to accelerate the prover.
 pub trait ZeroCheckDistributed<F: PrimeField>: ZeroCheck<F> + SumCheckDistributed<F> {
+    /// The master prover interacts with the transcript and worker provers to
+    /// generate the zero check proof.
     fn prove_master(
         poly_aux_info: &Self::VPAuxInfo,
         poly_products: &Vec<(F, Vec<usize>)>,
@@ -68,6 +73,8 @@ pub trait ZeroCheckDistributed<F: PrimeField>: ZeroCheck<F> + SumCheckDistribute
         master_channel: &impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors>;
 
+    /// The worker prover interacts with the master prover to form part of
+    /// the zero check proof.
     fn prove_worker(
         poly: &Self::VirtualPolynomial,
         worker_channel: &impl WorkerProverChannel,
@@ -144,7 +151,7 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         transcript: &mut Self::Transcript,
         master_channel: &impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors> {
-        let start = start_timer!(|| "zero check prove distributed master");
+        let start = start_timer!(|| "Distributed zero check; master");
 
         let length = poly_aux_info.num_variables;
         let mut r = transcript.get_and_append_challenge_vectors(b"0check r", length)?;
@@ -153,8 +160,8 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
             let x = r.split_off(length - log_num_workers);
             build_eq_x_r(&x)?.evaluations.clone()
         };
-        
-        master_channel.send(b"zero check starting signal")?;
+
+        // master_channel.send(b"zero check starting signal")?;
         master_channel.send(&r)?;
         master_channel.send_all(coeffs)?;
 
@@ -197,6 +204,8 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
+        let timer = start_timer!(|| "Distributed zero check; worker");
+
         let start_data: [u8; 26] = worker_channel.recv()?;
         if &start_data != b"zero check starting signal" {
             return Err(PolyIOPErrors::InvalidProof(format!(
@@ -226,7 +235,10 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         };
 
         worker_channel.send(b"zero check preparation completed")?;
-        <Self as SumCheckDistributed<F>>::prove_worker(&poly, worker_channel)
+        let res = <Self as SumCheckDistributed<F>>::prove_worker(&poly, worker_channel);
+
+        end_timer!(timer);
+        res
     }
 }
 
@@ -297,7 +309,7 @@ mod test {
         num_products: usize,
     ) -> Result<(), PolyIOPErrors> {
         assert!(n_log_provers <= nv, "log number of provers should be no larger than number of variables");
-        
+
         let mut rng = test_rng();
 
         {

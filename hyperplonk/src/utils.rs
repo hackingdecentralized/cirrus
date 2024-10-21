@@ -512,8 +512,8 @@ pub(crate) fn eval_perm_gate<F: PrimeField>(
 
 // check distributed permutation check subclaim:
 // proof.witness_perm_check_eval ?= perm_check_sub_claim.expected_eval
-// Q(x) := alpha2 * prod_master(x) - alpha2 * p1_master(x) * p2_master(x)
-//       + alpha1 * prod_worker(x) - alpha1 * p1_worker(x) * p2_worker(x)
+// Q(x) := alpha1 * prod_master(x) - alpha1 * p1_master(x) * p2_master(x)
+//       + alpha0 * prod_worker(x) - alpha0 * p1_worker(x) * p2_worker(x)
 //       + frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
 // where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
 //       p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
@@ -530,8 +530,8 @@ pub(crate) fn eval_perm_gate_distributed<F: PrimeField> (
     perm_evals: &[F],
     id_evals: &[F],
     witness_perm_evals: &[F],
+    alpha0: F,
     alpha1: F,
-    alpha2: F,
     beta: F,
     gamma: F,
     x1: F,
@@ -552,8 +552,8 @@ pub(crate) fn eval_perm_gate_distributed<F: PrimeField> (
         g *= w_eval + beta * perm_eval + gamma;
     }
 
-    let res = alpha2 * (prod_master_evals[0] - p1_master_eval * p2_master_eval)
-        + alpha1 * (prod_worker_evals[2] - p1_worker_eval * p2_worker_eval)
+    let res = alpha1 * (prod_master_evals[0] - p1_master_eval * p2_master_eval)
+        + alpha0 * (prod_worker_evals[2] - p1_worker_eval * p2_worker_eval)
         + frac_evals[0] * g - f;
 
     Ok(res)

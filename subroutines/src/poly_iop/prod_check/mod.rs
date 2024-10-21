@@ -144,14 +144,51 @@ pub struct ProductCheckProof<
     pub frac_comm: PCS::Commitment,
 }
 
+/// A distributed version of ProductCheck protocol generates a product check proof for
+/// the product of two lists of n-variate multilinear polynomials `(f1, f2, ..., fk)`
+/// and `(g1, ..., gk)` satisfying:
+///  \prod_{x \in {0,1}^n} f1(x) * ... * fk(x) = \prod_{x \in {0,1}^n} g1(x) * ... * gk(x)
+///
+/// The distributed version of ProductCheck gives a different proof structure than the
+/// non-distributed version, because the Quark system for original product check isn't
+/// easily distributed. The proof is different for the same problem when the number of
+/// workers is different.
+///
+/// Prover steps:
+/// 1. The worker provers build MLE `frac(x)` s.t. `frac(x) = f1(x) * ... * fk(x) / (g1(x) * ... * gk(x))`
+/// distributedly, as each worker prover holds part of `f1, ... fk, g1, ..., gk`.
+/// 2. The worker provers build MLE `prod_worker(x)` from their part of `frac(x)`.
+/// They send the result of product to the master prover.
+/// 3. The master prover builds MLE `prod_master(x)` from the product of `prod_worker(x)`s.
+/// 4. All provers collaboratively compute the commitments for `frac(x)`, `prod_worker(x)`,
+/// and `prod_master(x)`.
+/// 5. The master prover submits the commitments to the transcript and generates two
+/// challenges `alpha0` and `alpha1`.
+/// 6. The provers collaboratively build the virtual polynomial `Q(x)` and generate
+/// the zero-check proof.
+///     Q(x) = frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
+///          + alpha0 * (prod_worker(x) - p1_worker(x) * p2_worker(x))
+///          + alpha1 * (prod_master(x) - p1_master(x) * p2_master(x))
+///     where
+///         p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
+///         p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
+///         p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 0)
+///         p2_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
+///         t = log2(num_workers)
+/// 7. The master prover constructs the final proof for product check.
+///
+/// Verifier follows the same steps, with the new definition of the
+/// virtual polynomial `Q(x)` in mind.
 pub trait ProductCheckDistributed<E, PCS>: ZeroCheckDistributed<E::ScalarField>
-where 
+where
     E: Pairing,
     PCS: PolynomialCommitmentSchemeDistributed<E>,
 {
     type ProductCheckSubClaim;
     type ProductCheckProof;
 
+    /// The master prover protocol of the distributed product check for proving
+    /// the product of the polynomial over {0,1}^`num_vars`.
     #[allow(clippy::type_complexity)]
     fn prove_master(
         pcs_param_master: &PCS::MasterProverParam,
@@ -161,6 +198,8 @@ where
         master_channel: &impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors>;
 
+    /// The worker prover protocol of the distributed product check for proving
+    /// the product of the polynomial over {0,1}^`num_vars`.
     #[allow(clippy::type_complexity)]
     fn prove_worker(
         pcs_param_worker: &PCS::WorkerProverParam,
@@ -168,7 +207,9 @@ where
         gxs: &[Self::MultilinearExtension],
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors>;
-    
+
+    /// Verify a distributed product check proof and generate the subclaim
+    /// for polynomial evaluations.
     fn verify(
         proof: &Self::ProductCheckProof,
         aux_info: &VPAuxInfo<E::ScalarField>,
@@ -176,6 +217,11 @@ where
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors>;
 }
 
+/// A distributed version of product check subclaim consists of
+/// - A zero check IOP subclaim for the virtual polynomial
+/// - Two random challenges `alpha0` and `alpha1`
+/// - A final query for `prod(1, ..., 1, 0, 1, ..., 1) = 1`.
+///     - the `log_num_workers` term of final query is 0
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProductCheckSubClaimDistributed<F: PrimeField, ZC: ZeroCheckDistributed<F>> {
     pub zero_check_sub_claim: ZC::ZeroCheckSubClaim,
@@ -183,6 +229,13 @@ pub struct ProductCheckSubClaimDistributed<F: PrimeField, ZC: ZeroCheckDistribut
     pub alpha: (F, F),
 }
 
+/// A distributed version of product check proof consists of
+/// - a zerocheck proof
+/// - the result of the product polynomial
+/// - the log number of workers
+/// - a commitment for the product polynomial from the master prover
+/// - a commitment for the product polynomial from the worker provers
+/// - a commitment for the fractional polynomial
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProductCheckProofDistributed<
     E: Pairing,
@@ -328,9 +381,10 @@ where
         transcript: &mut Self::Transcript,
         master_channel: &impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "prod_check master prove");
+        let start = start_timer!(|| "Distributed prod check; master");
         let log_num_workers = master_channel.log_num_workers();
 
+        let preparation = start_timer!(|| "Distributed prod check preparation; master");
         master_channel.send(b"prod check starting signal")?;
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
         let prod_master = compute_product_poly(
@@ -386,6 +440,8 @@ where
             (E::ScalarField::one(), (6..7 + num_polys).collect()),
             (-E::ScalarField::one(), (7 + num_polys..7 + 2 * num_polys).collect()),
         ];
+        end_timer!(preparation);
+
         let zero_check_proof = <Self as ZeroCheckDistributed<E::ScalarField>>::prove_master(
             &poly_aux_info,
             &poly_products,
@@ -417,7 +473,8 @@ where
         gxs: &[Self::MultilinearExtension],
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "prod_check worker prove");
+        let start = start_timer!(|| "Distribution product check; prover");
+        let preparation = start_timer!(|| "Distribution product check preparation; prover");
 
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
@@ -508,15 +565,16 @@ where
                 .into_iter().chain(gxs.iter().cloned()).chain(fxs.iter().cloned()).collect()
         );
 
-        // build the zero-check proof
+        end_timer!(preparation);
 
+        // build the zero-check proof
         <Self as ZeroCheckDistributed<E::ScalarField>>::prove_worker(
             &poly,
             worker_channel,
         )?;
 
         end_timer!(start);
-        
+
         Ok((prod_worker, frac_poly))
     }
 
@@ -525,7 +583,7 @@ where
         aux_info: &VPAuxInfo<<E as Pairing>::ScalarField>,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "prod_check distributed verify");
+        let start = start_timer!(|| "Distributed prod check; verifier");
 
         // update transcript and generate challenge
         transcript.append_serializable_element(b"frac(x)", &proof.frac_comm)?;
@@ -710,7 +768,7 @@ mod test {
                     Ok::<(), PolyIOPErrors>(())
                 })
             }).collect::<Vec<_>>();
-        
+
         let (proof, prod_master) = <PolyIOP<E::ScalarField> as ProductCheckDistributed<E, PCS>>::prove_master(
             &pcs_param_master,
             num_polys,
@@ -733,7 +791,7 @@ mod test {
         )?;
 
         assert_eq!(
-            prod_master.evaluate(&subclaim.final_query.0[num_worker_vars..]).unwrap(), 
+            prod_master.evaluate(&subclaim.final_query.0[num_worker_vars..]).unwrap(),
             subclaim.final_query.1,
             "The final query evalution is not correct"
         );
@@ -815,7 +873,7 @@ mod test {
                     .fold(Fr::from(1u128), |acc, x| acc * x)
             })
             .fold(Fr::from(1u128), |acc, x| acc * x);
-        
+
         let mut prod_g = [prod_g];
 
         batch_inversion(&mut prod_g);

@@ -78,6 +78,9 @@ where
     ) -> Result<bool, HyperPlonkErrors>;
 }
 
+/// A trait for distributed HyperPlonk SNARKs(Cirrus).
+/// A distributed HyperPlonk is derived from distributed version
+/// of ZeroChecks and PermutationChecks.
 pub trait HyperPlonkSNARKDistributed<E, PCS>: PermutationCheckDistributed<E, PCS>
 where
     E: Pairing,
@@ -89,12 +92,35 @@ where
     type VerifyingKey;
     type Proof;
 
+    /// Generate proving and verifying keys for distributed HyperPlonk
+    /// from a given index(or a specified circuit).
+    /// 
+    /// Inputs:
+    /// - `index`: HyperPlonk index
+    /// - `log_num_worker`: log number of workers
+    /// - `pcs_srs`: Polynomial commitment structured reference string
+    /// 
+    /// Outputs:
+    /// - The distributed HyperPlonk proving key, which is a tuple of
+    ///   the master proving key and a vector of worker proving keys.
+    /// - The HyperPlonk verifying key(distributed version).
     fn preprocess(
         index: &Self::Index,
         log_num_worker: usize,
         pcs_srs: &PCS::SRS,
     ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), HyperPlonkErrors>;
 
+    /// Master prover protocol of the distributed HyperPlonk.
+    /// 
+    /// Inputs:
+    /// - `pk`: distributed HyperPlonk master proving key
+    /// - `pub_input`: online public input
+    /// - `witnesses`: witness assignment
+    /// - `log_num_worker`: log number of workers
+    /// - `master_channel`: master prover channel
+    /// 
+    /// Outputs:
+    /// - The distributed HyperPlonk proof
     fn prove_master(
         pk: &Self::ProvingKeyMaster,
         pub_input: &[E::ScalarField],
@@ -103,11 +129,25 @@ where
         master_channel: &impl MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors>;
 
+    /// Worker prover protocol of the distributed HyperPlonk.
+    /// 
+    /// Inputs:
+    /// - `pk`: distributed HyperPlonk worker proving key
+    /// - `worker_channel`: worker prover channel
     fn prove_worker(
         pk: &Self::ProvingKeyWorker,
         worker_channel: &impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors>;
 
+    /// Verify the distributed HyperPlonk proof.
+    /// 
+    /// Inputs:
+    /// - `vk`: distributed HyperPlonk verifying key
+    /// - `pub_input`: online public input
+    /// - `proof`: distributed HyperPlonk proof
+    /// 
+    /// Outputs:
+    /// - Return a boolean on whether the verification is successful
     fn verify(
         vk: &Self::VerifyingKey,
         pub_input: &[E::ScalarField],
