@@ -9,10 +9,10 @@ mod channel_enum;
 
 pub trait MasterProverChannel {
     /// TODO
-    fn send(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError>;
+    fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError>;
 
     /// TODO
-    fn send_all<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError>;
+    fn send_different<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError>;
     
     /// TODO
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError>;

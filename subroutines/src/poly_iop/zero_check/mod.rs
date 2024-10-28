@@ -161,9 +161,9 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
             build_eq_x_r(&x)?.evaluations.clone()
         };
 
-        // master_channel.send(b"zero check starting signal")?;
-        master_channel.send(&r)?;
-        master_channel.send_all(coeffs)?;
+        // master_channel.send_uniform(b"zero check starting signal")?;
+        master_channel.send_uniform(&r)?;
+        master_channel.send_different(coeffs)?;
 
         master_channel.recv::<[u8; 32]>().unwrap().iter().map( |msg| {
             (msg == b"zero check preparation completed").then_some(()).ok_or(PolyIOPErrors::WorkerNotMatching)
@@ -248,7 +248,7 @@ mod test {
     use std::thread::spawn;
 
     use super::{ZeroCheck, ZeroCheckDistributed};
-    use crate::{new_master_worker_thread_channels, poly_iop::{errors::PolyIOPErrors, PolyIOP}};
+    use crate::{new_master_worker_thread_channels, new_master_worker_channels, poly_iop::{errors::PolyIOPErrors, PolyIOP}};
     use arithmetic::VirtualPolynomial;
     use ark_bls12_381::Fr;
     use ark_std::test_rng;
@@ -303,12 +303,12 @@ mod test {
     }
 
     fn test_zerocheck_distributed(
-        n_log_provers: usize,
+        log_num_workers: usize,
         nv: usize,
         num_multiplicands_range: (usize, usize),
         num_products: usize,
     ) -> Result<(), PolyIOPErrors> {
-        assert!(n_log_provers <= nv, "log number of provers should be no larger than number of variables");
+        assert!(log_num_workers <= nv, "log number of provers should be no larger than number of variables");
 
         let mut rng = test_rng();
 
@@ -316,12 +316,13 @@ mod test {
             // good path: zero virtual poly
             let poly =
                 VirtualPolynomial::rand_zero(nv, num_multiplicands_range, num_products, &mut rng)?;
-            let distributed_poly = poly.distribute(n_log_provers)?;
+            let distributed_poly = poly.distribute(log_num_workers)?;
 
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
+            // let (mut master_channel, worker_channels) = new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
+            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
@@ -339,7 +340,7 @@ mod test {
             let proof = <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_master(
                 &poly.aux_info,
                 &poly.products,
-                n_log_provers,
+                log_num_workers,
                 &mut transcript,
                 &mut master_channel,
             )?;
@@ -360,12 +361,13 @@ mod test {
             // good path: zero virtual poly
             let (poly, _) =
                 VirtualPolynomial::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
-            let distributed_poly = poly.distribute(n_log_provers)?;
+            let distributed_poly = poly.distribute(log_num_workers)?;
 
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(n_log_provers);
+            // let (mut master_channel, worker_channels) = new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
+            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
@@ -383,7 +385,7 @@ mod test {
             let proof = <PolyIOP<Fr> as ZeroCheckDistributed<Fr>>::prove_master(
                 &poly.aux_info,
                 &poly.products,
-                n_log_provers,
+                log_num_workers,
                 &mut transcript,
                 &mut master_channel,
             )?;
@@ -416,10 +418,10 @@ mod test {
         let num_multiplicands_range = (4, 9);
         let num_products = 5;
 
-        let n_log_provers = 3;
+        let log_num_workers = 2;
 
         test_zerocheck(nv, num_multiplicands_range, num_products)?;
-        test_zerocheck_distributed(n_log_provers, nv, num_multiplicands_range, num_products)
+        test_zerocheck_distributed(log_num_workers, nv, num_multiplicands_range, num_products)
     }
 
     #[test]

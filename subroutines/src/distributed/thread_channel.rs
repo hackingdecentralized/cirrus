@@ -48,7 +48,7 @@ impl WorkerProverChannelThread {
 }
 
 impl MasterProverChannel for MasterProverChannelThread {
-    fn send(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+    fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
@@ -68,7 +68,7 @@ impl MasterProverChannel for MasterProverChannelThread {
         Ok(())
     }
 
-    fn send_all<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError> {
+    fn send_different<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError> {
         #[cfg(feature = "parallel")]
         self.send_channel.par_iter().zip(msg.into_par_iter()).map(| (channel, msg) | {
             let mut serialized_msg = Vec::new();
@@ -144,8 +144,8 @@ pub fn new_master_worker_thread_channels(
     let master_channel = MasterProverChannelThread::new(log_num_workers, master_send, master_recv);
     let worker_channels = worker_send.into_iter().zip(worker_recv.into_iter())
         .enumerate()
-        .map( | (worker_id, (send, recv)) | {
-            WorkerProverChannelThread::new(worker_id, send, recv)
+        .map( | (worker_id, (send_uniform, recv)) | {
+            WorkerProverChannelThread::new(worker_id, send_uniform, recv)
         }).collect();
 
     (master_channel, worker_channels)
@@ -167,7 +167,7 @@ mod test {
         let (mut master_channel, mut worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
         let master_send = vec![1, 2, 3];
-        master_channel.send(&master_send).unwrap();
+        master_channel.send_uniform(&master_send).unwrap();
         let received_msgs: Vec<Vec<u8>> = worker_channels.iter_mut().map(| worker_channel | {
             worker_channel.recv::<Vec<u8>>().unwrap()
         }).collect();
@@ -180,7 +180,7 @@ mod test {
         let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
         let master = spawn(move || {
             let master_send = vec![1u8, 2, 3];
-            master_channel.send(&master_send).unwrap();
+            master_channel.send_uniform(&master_send).unwrap();
             let receive: Vec<u8> = master_channel.recv().unwrap();
             println!("{:?}", receive);
             assert_eq!(receive, (0..1<<log_num_workers).collect::<Vec<u8>>(), "Received message is not equal to the sent message");

@@ -158,7 +158,7 @@ pub struct ProductCheckProof<
 /// 1. The worker provers build MLE `frac(x)` s.t. `frac(x) = f1(x) * ... * fk(x) / (g1(x) * ... * gk(x))`
 /// distributedly, as each worker prover holds part of `f1, ... fk, g1, ..., gk`.
 /// 2. The worker provers build MLE `prod_worker(x)` from their part of `frac(x)`.
-/// They send the result of product to the master prover.
+/// They send_uniform the result of product to the master prover.
 /// 3. The master prover builds MLE `prod_master(x)` from the product of `prod_worker(x)`s.
 /// 4. All provers collaboratively compute the commitments for `frac(x)`, `prod_worker(x)`,
 /// and `prod_master(x)`.
@@ -385,7 +385,7 @@ where
         let log_num_workers = master_channel.log_num_workers();
 
         let preparation = start_timer!(|| "Distributed prod check preparation; master");
-        master_channel.send(b"prod check starting signal")?;
+        master_channel.send_uniform(b"prod check starting signal")?;
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
         let prod_master = compute_product_poly(
             &Arc::new(DenseMultilinearExtension::from_evaluations_vec(log_num_workers, sub_prod.clone())),
@@ -425,8 +425,8 @@ where
             }
         }
 
-        master_channel.send_all(p_evals_master)?;
-        master_channel.send(&vec![alpha0, alpha1])?;
+        master_channel.send_different(p_evals_master)?;
+        master_channel.send_uniform(&vec![alpha0, alpha1])?;
         let poly_aux_info = VPAuxInfo {
             max_degree: num_polys + 1,
             num_variables: num_vars,
@@ -620,7 +620,7 @@ where
 mod test {
     use super::{ProductCheck, ProductCheckDistributed};
     use crate::{
-        new_master_worker_thread_channels, pcs::{prelude::MultilinearKzgPCS, PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, poly_iop::{errors::PolyIOPErrors, PolyIOP}, MultilinearProverParam
+        new_master_worker_thread_channels, new_master_worker_channels, pcs::{prelude::MultilinearKzgPCS, PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, poly_iop::{errors::PolyIOPErrors, PolyIOP}, MultilinearProverParam
     };
     use arithmetic::VPAuxInfo;
     use ark_bls12_381::{Bls12_381, Fr};
@@ -747,6 +747,8 @@ mod test {
         >,
     {
         let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_param, log_num_workers)?;
+        
+        // let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:7878");
         let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
         let mut transcript = <PolyIOP<E::ScalarField> as ProductCheck<E, PCS>>::init_transcript();

@@ -165,7 +165,7 @@ where
             }).collect::<Vec<_>>();
         let witnesses_distribution = transpose(witnesses_distribution);
 
-        master_channel.send_all(witnesses_distribution)?;
+        master_channel.send_different(witnesses_distribution)?;
         let witness_commits = (0..witnesses.len())
             .map(|_| PCS::commit_distributed_master(&pk.pcs_param, &num_vars, master_channel))
             .collect::<Result<Vec<_>, _>>()?;
@@ -214,7 +214,7 @@ where
             master_channel,
         )?;
 
-        master_channel.send_all(prod_master.evaluations.clone())?;
+        master_channel.send_different(prod_master.evaluations.clone())?;
 
         end_timer!(step);
 
@@ -552,7 +552,7 @@ mod tests {
 
     use ark_bls12_381::Bls12_381;
     use ark_std::{test_rng, One};
-    use subroutines::{new_master_worker_thread_channels, MultilinearKzgPCS, PolynomialCommitmentScheme};
+    use subroutines::{new_master_worker_thread_channels, new_master_worker_channels, MultilinearKzgPCS, PolynomialCommitmentScheme};
 
     use crate::{prelude::{CustomizedGates, SelectorColumn}, structs::HyperPlonkParams};
 

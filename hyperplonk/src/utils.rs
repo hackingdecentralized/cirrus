@@ -143,7 +143,7 @@ where
             worker_points.push(worker_point.to_vec());
         }
 
-        master_channel.send(&worker_points)?;
+        master_channel.send_uniform(&worker_points)?;
         let evals: Vec<Vec<PCS::Evaluation>> = master_channel.recv()?;
         let evals = transpose(evals).into_iter().zip(self.points.iter())
             .map(|(evals, point)| {

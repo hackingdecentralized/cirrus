@@ -268,7 +268,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             )));
         }
 
-        master_channel.send(b"commit starting signal")?;
+        master_channel.send_uniform(b"commit starting signal")?;
         let commitments: Vec<E::G1Affine> = master_channel.recv()?;
         // commitments.iter().fold(E::G1Affine::from(1), |acc, x| acc * x.0);
         let commitment =
@@ -348,8 +348,8 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
 
         let (worker_points, master_points) = point.split_at(worker_num_vars);
 
-        master_channel.send(b"open starting signal")?;
-        master_channel.send(&worker_points.to_vec())?;
+        master_channel.send_uniform(b"open starting signal")?;
+        master_channel.send_uniform(&worker_points.to_vec())?;
         let evals: Vec<Self::Evaluation> = master_channel.recv()?;
         let master_poly =
             Arc::new(DenseMultilinearExtension::from_evaluations_vec(master_num_vars, evals));
@@ -549,6 +549,7 @@ mod tests {
     use std::thread::spawn;
 
     use crate::new_master_worker_thread_channels;
+    use crate::new_master_worker_channels;
 
     use super::*;
     use ark_bls12_381::Bls12_381;
@@ -586,15 +587,26 @@ mod tests {
     fn test_single_helper_distributed<R: Rng>(
         params: &MultilinearUniversalParams<E>,
         polys: Vec<Arc<DenseMultilinearExtension<Fr>>>,
-        n_log_worker: usize,
+        log_num_workers: usize,
         rng: &mut R,
     ) -> Result<(), PCSError> {
-        let nv = polys[0].num_vars() + n_log_worker;
-        assert_eq!(polys.len(), 1 << n_log_worker);
+        let nv = polys[0].num_vars() + log_num_workers;
+        assert_eq!(polys.len(), 1 << log_num_workers);
         let (ck, vk) = MultilinearKzgPCS::trim(params, None, Some(nv))?;
 
-        let (master_ck, worker_ck) = MultilinearKzgPCS::prover_param_distributed(ck, n_log_worker)?;
-        let (mut master_channel, worker_channel) = new_master_worker_thread_channels(n_log_worker);
+        let (master_ck, worker_ck) = MultilinearKzgPCS::prover_param_distributed(ck, log_num_workers)?;
+
+        // Define worker addresses as a Vec<&str>
+        let worker_addrs: Vec<String> = (0..log_num_workers)
+        .map(|i| format!("127.0.0.1:{}", 7878 + i))
+        .collect();
+
+        let worker_addrs_refs: Vec<&str> = worker_addrs.iter().map(|s| s.as_str()).collect();
+
+        // Call new_master_worker_channels with use_sockets = true
+        // let (mut master_channel, worker_channel) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:7878", worker_addrs_refs);
+
+        let (mut master_channel, worker_channel) = new_master_worker_thread_channels(log_num_workers);
 
         let handles: Vec<_> = worker_ck.into_iter()
             .zip(polys)
@@ -653,14 +665,14 @@ mod tests {
         let mut rng = test_rng();
 
         let params = MultilinearKzgPCS::<E>::gen_srs_for_testing(&mut rng, 10)?;
-        let n_log_worker = 4;
+        let log_num_workers = 4;
         let worker_num_vars = 5;
 
-        let polys = (0..(1 << n_log_worker))
+        let polys = (0..(1 << log_num_workers))
             .map(|_| Arc::new(DenseMultilinearExtension::rand(worker_num_vars, &mut rng)))
             .collect::<Vec<_>>();
 
-        test_single_helper_distributed(&params, polys, n_log_worker, &mut rng)?;
+        test_single_helper_distributed(&params, polys, log_num_workers, &mut rng)?;
         Ok(())
     }
 
