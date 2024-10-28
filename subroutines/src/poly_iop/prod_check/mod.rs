@@ -760,7 +760,7 @@ mod test {
             .zip(fs.into_iter().zip(gs.into_iter()))
             .map(|((mut ch, pcs_param), (fs, gs))| {
                 spawn(move || {
-                    let (frac, _) = <PolyIOP<E::ScalarField> as ProductCheckDistributed<E, PCS>>::prove_worker(
+                    let (_, frac) = <PolyIOP<E::ScalarField> as ProductCheckDistributed<E, PCS>>::prove_worker(
                         &pcs_param,
                         &fs,
                         &gs,
