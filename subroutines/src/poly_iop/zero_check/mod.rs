@@ -206,13 +206,13 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
     ) -> Result<(), PolyIOPErrors> {
         let timer = start_timer!(|| "Distributed zero check; worker");
 
-        let start_data: [u8; 26] = worker_channel.recv()?;
-        if &start_data != b"zero check starting signal" {
-            return Err(PolyIOPErrors::InvalidProof(format!(
-                "zero check: invalid starting signal {:?}",
-                start_data
-            )));
-        }
+        // let start_data: [u8; 26] = worker_channel.recv()?;
+        // if &start_data != b"zero check starting signal" {
+        //     return Err(PolyIOPErrors::InvalidProof(format!(
+        //         "zero check: invalid starting signal {:?}",
+        //         start_data
+        //     )));
+        // }
 
         let r: Vec<F> = worker_channel.recv()?;
         let coeff: F = worker_channel.recv()?;

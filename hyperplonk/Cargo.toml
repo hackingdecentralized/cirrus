@@ -19,10 +19,16 @@ util = { path = "../util" }
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4.0", default-features = false, features = [ "curve" ] }
+# # Benchmarks
+# [[bench]]
+# name = "hyperplonk-benches"
+# path = "benches/bench.rs"
+# harness = false
+
 # Benchmarks
 [[bench]]
-name = "hyperplonk-benches"
-path = "benches/bench.rs"
+name = "cirrus-benches"
+path = "benches/bench_cirrus.rs"
 harness = false
 
 [features]

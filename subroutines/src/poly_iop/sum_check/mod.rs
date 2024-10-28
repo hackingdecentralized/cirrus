@@ -422,7 +422,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         for i in 0..poly.aux_info.num_variables {
             let prover_msg = IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
             worker_channel.send(&prover_msg)?;
-            dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
+            // dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
             challenge = worker_channel.recv()?;
         }
 

@@ -44,7 +44,7 @@ where
         index: &Self::Index,
         log_num_worker: usize,
         pcs_srs: &PCS::SRS,
-    ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), crate::prelude::HyperPlonkErrors> {
+    ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), HyperPlonkErrors> {
         let num_vars = index.num_variables();
         let supported_ml_degree = num_vars;
 
