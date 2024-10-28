@@ -32,7 +32,7 @@ fn helper(
     assert!(circuit.is_satisfied());
     let index = circuit.index;
 
-    let (master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+    let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
     let ((pk_master, pk_workers), vk) =
         <PolyIOP::<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>
@@ -41,9 +41,9 @@ fn helper(
     let worker_handles = pk_workers
         .into_iter()
         .zip(worker_channels.into_iter())
-        .map(|(pk, channel)| {
+        .map(|(pk, mut channel)| {
             spawn(move || {
-                <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(&pk, &channel)
+                <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(&pk, &mut channel)
             })
         }).collect::<Vec<_>>();
 
@@ -52,7 +52,7 @@ fn helper(
         &circuit.public_inputs,
         &circuit.witnesses,
         log_num_workers,
-        &master_channel,
+        &mut master_channel,
     )?;
 
     for handle in worker_handles {
