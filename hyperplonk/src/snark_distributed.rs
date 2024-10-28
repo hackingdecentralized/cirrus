@@ -620,7 +620,8 @@ mod tests {
             selectors: vec![q],
         };
 
-        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
         let ((pk_master, pk_workers), vk) =
             PolyIOP::<E::ScalarField>::preprocess(&index, log_num_workers, &pcs_srs)?;

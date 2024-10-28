@@ -479,17 +479,10 @@ mod test {
         >,
     {
         let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_param, log_num_workers)?;
-        // Define worker addresses as a Vec<&str>
-        let worker_addrs: Vec<String> = (0..log_num_workers)
-        .map(|i| format!("127.0.0.1:{}", 7879 + i))
-        .collect();
 
-        let worker_addrs_refs: Vec<&str> = worker_addrs.iter().map(|s| s.as_str()).collect();
-
-        // Call new_master_worker_channels with use_sockets = true
-        // let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:7878", worker_addrs_refs);
+        let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:0");
         
-        let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
         let mut transcript = <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;
 

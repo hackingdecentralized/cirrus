@@ -596,17 +596,9 @@ mod tests {
 
         let (master_ck, worker_ck) = MultilinearKzgPCS::prover_param_distributed(ck, log_num_workers)?;
 
-        // Define worker addresses as a Vec<&str>
-        let worker_addrs: Vec<String> = (0..log_num_workers)
-        .map(|i| format!("127.0.0.1:{}", 7878 + i))
-        .collect();
+        let (mut master_channel, worker_channel) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:0");
 
-        let worker_addrs_refs: Vec<&str> = worker_addrs.iter().map(|s| s.as_str()).collect();
-
-        // Call new_master_worker_channels with use_sockets = true
-        // let (mut master_channel, worker_channel) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:7878", worker_addrs_refs);
-
-        let (mut master_channel, worker_channel) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channel) = new_master_worker_thread_channels(log_num_workers);
 
         let handles: Vec<_> = worker_ck.into_iter()
             .zip(polys)

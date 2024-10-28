@@ -321,8 +321,8 @@ mod test {
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            // let (mut master_channel, worker_channels) = new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
-            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+            let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
+            // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
@@ -366,8 +366,8 @@ mod test {
             let mut transcript = <PolyIOP<Fr> as ZeroCheck<Fr>>::init_transcript();
             transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
-            // let (mut master_channel, worker_channels) = new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
-            let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+            let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
+            // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
 
             let worker_handles: Vec<_> = worker_channels.into_iter()
                 .zip(distributed_poly)
