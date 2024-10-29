@@ -11,7 +11,8 @@ pub(crate) mod srs;
 pub(crate) mod util;
 
 use crate::{
-    pcs::{prelude::Commitment, PCSError, PolynomialCommitmentScheme, StructuredReferenceString}, BatchProof, MasterProverChannel, WorkerProverChannel
+    pcs::{prelude::Commitment, PCSError, PolynomialCommitmentScheme, StructuredReferenceString},
+    BatchProof, MasterProverChannel, WorkerProverChannel,
 };
 use arithmetic::evaluate_opt;
 use ark_ec::{
@@ -28,7 +29,9 @@ use ark_std::{
 };
 use std::ops::Mul;
 // use batching::{batch_verify_internal, multi_open_internal};
-use srs::{MultilinearProverParam, MultilinearUniversalParams, MultilinearVerifierParam, Evaluations};
+use srs::{
+    Evaluations, MultilinearProverParam, MultilinearUniversalParams, MultilinearVerifierParam,
+};
 use transcript::IOPTranscript;
 
 use self::batching::{batch_verify_internal, multi_open_internal};
@@ -216,22 +219,20 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let (g, h) = (prover_param.g, prover_param.h);
         let worker_params = {
             let powers_of_g = prover_param.powers_of_g;
-            let mut iters = powers_of_g.into_iter()
+            let mut iters = powers_of_g
+                .into_iter()
                 .take(total_num_vars - log_num_workers + 1)
-                .map(|x| {
-                    x.evals.into_iter()
-                })
+                .map(|x| x.evals.into_iter())
                 .collect::<Vec<_>>();
 
             (0..num_workers)
                 .map(|_| {
-                    let powers_of_g = (0..worker_num_vars+1).rev()
+                    let powers_of_g = (0..worker_num_vars + 1)
+                        .rev()
                         .map(|i| 1 << i)
                         .zip(iters.iter_mut())
-                        .map(|(size, it)| {
-                            Evaluations {
-                                evals: it.take(size).collect::<Vec<_>>()
-                            }
+                        .map(|(size, it)| Evaluations {
+                            evals: it.take(size).collect::<Vec<_>>(),
                         })
                         .collect::<Vec<_>>();
                     Self::WorkerProverParam {
@@ -264,16 +265,19 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         if master_num_vars != master_channel.log_num_workers() {
             return Err(PCSError::InvalidParameters(format!(
                 "master_num_vars {} != log_num_workers {}",
-                master_num_vars, master_channel.log_num_workers()
+                master_num_vars,
+                master_channel.log_num_workers()
             )));
         }
 
         master_channel.send_uniform(b"commit starting signal")?;
         let commitments: Vec<E::G1Affine> = master_channel.recv()?;
         // commitments.iter().fold(E::G1Affine::from(1), |acc, x| acc * x.0);
-        let commitment =
-            E::G1::msm_unchecked(&commitments,
-                &vec![<E as Pairing>::ScalarField::from(1u128); 1<<master_num_vars]).into_affine();
+        let commitment = E::G1::msm_unchecked(
+            &commitments,
+            &vec![<E as Pairing>::ScalarField::from(1u128); 1 << master_num_vars],
+        )
+        .into_affine();
 
         Ok(Commitment(commitment))
     }
@@ -281,7 +285,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
     fn commit_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &mut impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError> {
         let worker_prover_param = worker_prover_param.borrow();
         let commit_timer = start_timer!(|| "commit");
@@ -305,14 +309,16 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             "msm of size {}",
             worker_prover_param.powers_of_g[0].evals.len()
         ));
-        let commitment: E::G1Affine =
-            E::G1::msm_unchecked(&worker_prover_param.powers_of_g[0].evals, scalars.as_slice())
-                .into_affine();
+        let commitment: E::G1Affine = E::G1::msm_unchecked(
+            &worker_prover_param.powers_of_g[0].evals,
+            scalars.as_slice(),
+        )
+        .into_affine();
         end_timer!(msm_timer);
 
         end_timer!(commit_timer);
 
-        worker_channel.send( &commitment )?;
+        worker_channel.send(&commitment)?;
         Ok(())
     }
 
@@ -320,7 +326,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
         point: &Self::Point,
-        master_channel: &mut impl MasterProverChannel
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::Proof, Self::Evaluation), PCSError> {
         let master_num_vars = master_prover_param.borrow().num_vars;
         let worker_num_vars = *handle - master_num_vars;
@@ -328,21 +334,24 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         if master_num_vars != master_channel.log_num_workers() {
             return Err(PCSError::InvalidParameters(format!(
                 "master_num_vars {} != log_num_workers {}",
-                master_num_vars, master_channel.log_num_workers()
+                master_num_vars,
+                master_channel.log_num_workers()
             )));
         }
 
         if point.len() != *handle {
             return Err(PCSError::InvalidParameters(format!(
                 "point length ({}) not equal to handle ({})",
-                point.len(), handle
+                point.len(),
+                handle
             )));
         }
 
         if master_num_vars > point.len() {
             return Err(PCSError::InvalidParameters(format!(
                 "master_num_vars {} > point length {}",
-                master_num_vars, point.len()
+                master_num_vars,
+                point.len()
             )));
         }
 
@@ -351,40 +360,56 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         master_channel.send_uniform(b"open starting signal")?;
         master_channel.send_uniform(&worker_points.to_vec())?;
         let evals: Vec<Self::Evaluation> = master_channel.recv()?;
-        let master_poly =
-            Arc::new(DenseMultilinearExtension::from_evaluations_vec(master_num_vars, evals));
+        let master_poly = Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+            master_num_vars,
+            evals,
+        ));
 
-        let (proof, eval) = open_internal(master_prover_param.borrow(), &master_poly, master_points)?;
+        let (proof, eval) =
+            open_internal(master_prover_param.borrow(), &master_poly, master_points)?;
 
         let worker_proofs: Vec<MultilinearKzgProof<E>> = master_channel.recv()?;
 
         let aggregated_proof = {
-            let mut proofs_iter = worker_proofs.into_iter().map(|x| x.proofs.into_iter()).collect::<Vec<_>>();
+            let mut proofs_iter = worker_proofs
+                .into_iter()
+                .map(|x| x.proofs.into_iter())
+                .collect::<Vec<_>>();
             let mut x = (0..worker_num_vars)
                 .map(|_| {
-                    let acc = proofs_iter.iter_mut().map(|x| x.next().unwrap()).collect::<Vec<_>>();
+                    let acc = proofs_iter
+                        .iter_mut()
+                        .map(|x| x.next().unwrap())
+                        .collect::<Vec<_>>();
                     E::G1::msm_unchecked(
                         &acc,
-                        &vec![<E as Pairing>::ScalarField::from(1u128); 1<<master_num_vars]
-                    ).into_affine()
+                        &vec![<E as Pairing>::ScalarField::from(1u128); 1 << master_num_vars],
+                    )
+                    .into_affine()
                 })
                 .collect::<Vec<_>>();
             x.extend(proof.proofs.iter());
             x
         };
 
-        Ok((MultilinearKzgProof { proofs: aggregated_proof }, eval))
+        Ok((
+            MultilinearKzgProof {
+                proofs: aggregated_proof,
+            },
+            eval,
+        ))
     }
 
     fn open_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
-        worker_channel: &mut impl WorkerProverChannel
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError> {
         if worker_prover_param.borrow().num_vars != poly.num_vars {
             return Err(PCSError::InvalidParameters(format!(
                 "MlE length ({}) not equal to prover params ({})",
-                poly.num_vars, worker_prover_param.borrow().num_vars
+                poly.num_vars,
+                worker_prover_param.borrow().num_vars
             )));
         }
 
@@ -548,8 +573,8 @@ fn verify_internal<E: Pairing>(
 mod tests {
     use std::thread::spawn;
 
-    use crate::new_master_worker_thread_channels;
     use crate::new_master_worker_channels;
+    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Bls12_381;
@@ -594,13 +619,16 @@ mod tests {
         assert_eq!(polys.len(), 1 << log_num_workers);
         let (ck, vk) = MultilinearKzgPCS::trim(params, None, Some(nv))?;
 
-        let (master_ck, worker_ck) = MultilinearKzgPCS::prover_param_distributed(ck, log_num_workers)?;
+        let (master_ck, worker_ck) =
+            MultilinearKzgPCS::prover_param_distributed(ck, log_num_workers)?;
 
-        let (mut master_channel, worker_channel) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:0");
+        let (mut master_channel, worker_channel) =
+            new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
         // let (mut master_channel, worker_channel) = new_master_worker_thread_channels(log_num_workers);
 
-        let handles: Vec<_> = worker_ck.into_iter()
+        let handles: Vec<_> = worker_ck
+            .into_iter()
             .zip(polys)
             .zip(worker_channel)
             .map(|((ck, poly), mut ch)| {
@@ -608,13 +636,22 @@ mod tests {
                     MultilinearKzgPCS::commit_distributed_worker(&ck, &poly, &mut ch)?;
                     MultilinearKzgPCS::open_distributed_worker(&ck, &poly, &mut ch)
                 })
-            }).collect();
+            })
+            .collect();
 
-        let com = MultilinearKzgPCS::commit_distributed_master(&master_ck, &nv, &mut master_channel)?;
+        let com =
+            MultilinearKzgPCS::commit_distributed_master(&master_ck, &nv, &mut master_channel)?;
         let point: Vec<_> = (0..nv).map(|_| Fr::rand(rng)).collect();
-        let (proof, value) = MultilinearKzgPCS::open_distributed_master(&master_ck, &nv, &point, &mut master_channel)?;
+        let (proof, value) = MultilinearKzgPCS::open_distributed_master(
+            &master_ck,
+            &nv,
+            &point,
+            &mut master_channel,
+        )?;
 
-        handles.into_iter().map(|x| x.join().unwrap())
+        handles
+            .into_iter()
+            .map(|x| x.join().unwrap())
             .collect::<Result<Vec<_>, PCSError>>()?;
 
         assert!(MultilinearKzgPCS::verify(

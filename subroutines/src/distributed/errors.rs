@@ -14,6 +14,10 @@ pub enum DistributedError {
     WorkerRecvError,
     /// Channel creat error
     ChCreateError,
+    /// Master listen error
+    MasterListenError,
+    /// Worker connect error
+    WorkerConnectError,
 }
 
 impl From<ark_serialize::SerializationError> for DistributedError {

@@ -9,15 +9,16 @@
 use self::util::computer_nums_and_denoms;
 use crate::{
     pcs::{PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed},
-    poly_iop::{errors::PolyIOPErrors, prelude::ProductCheck, PolyIOP}, MasterProverChannel, MultilinearProverParam, WorkerProverChannel
+    poly_iop::{errors::PolyIOPErrors, prelude::ProductCheck, PolyIOP},
+    MasterProverChannel, MultilinearProverParam, WorkerProverChannel,
 };
 use ark_ec::pairing::Pairing;
 use ark_ff::One;
 use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
-use util::computer_nums_and_denoms_with_ids;
 use std::sync::Arc;
 use transcript::IOPTranscript;
+use util::computer_nums_and_denoms_with_ids;
 
 use super::prod_check::ProductCheckDistributed;
 
@@ -131,7 +132,7 @@ where
     /// Master prover protocol of the distributed permutation check. The master
     /// prover does not hold any polynomials at the beginning of the protocol.
     /// It interacts with the worker provers for the product check PIOP.
-    /// 
+    ///
     /// Outputs:
     /// - a distributed permutation check proof
     /// - the prod_master polynomial
@@ -146,8 +147,8 @@ where
 
     /// Worker prover protocol of the distributed permutation check. The worker
     /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ..., gk),
-    /// (id1, ..., idk), and (perm1, ..., permk). 
-    /// 
+    /// (id1, ..., idk), and (perm1, ..., permk).
+    ///
     /// Outputs:
     /// - the prod_worker polynomial
     /// - the frac polynomial
@@ -169,7 +170,6 @@ where
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors>;
 }
-
 
 impl<E, PCS> PermutationCheck<E, PCS> for PolyIOP<E::ScalarField>
 where
@@ -283,7 +283,7 @@ where
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer!(|| "Permutation check prove master");
         let log_num_workers = master_channel.log_num_workers();
-        
+
         if num_vars < log_num_workers {
             return Err(PolyIOPErrors::InvalidParameters(format!(
                 "num_vars = {} < log_num_workers = {}",
@@ -295,14 +295,13 @@ where
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
 
         master_channel.send_uniform(&(beta, gamma))?;
-        let (proof, prod_master) =
-            <Self as ProductCheckDistributed<E, PCS>>::prove_master(
-                pcs_param_master,
-                num_polys,
-                num_vars,
-                transcript,
-                master_channel,
-            )?;
+        let (proof, prod_master) = <Self as ProductCheckDistributed<E, PCS>>::prove_master(
+            pcs_param_master,
+            num_polys,
+            num_vars,
+            transcript,
+            master_channel,
+        )?;
 
         end_timer!(start);
         Ok((proof, prod_master))
@@ -345,11 +344,14 @@ where
 
         let start_signal: [u8; 26] = worker_channel.recv()?;
         if start_signal != *b"perm check starting signal" {
-            return Err(PolyIOPErrors::InvalidProof("invalid start signal".to_string()));
+            return Err(PolyIOPErrors::InvalidProof(
+                "invalid start signal".to_string(),
+            ));
         }
 
         let (beta, gamma) = worker_channel.recv()?;
-        let (numerators, denominators) = computer_nums_and_denoms_with_ids(&beta, &gamma, fxs, gxs, ids, perms)?;
+        let (numerators, denominators) =
+            computer_nums_and_denoms_with_ids(&beta, &gamma, fxs, gxs, ids, perms)?;
 
         let (prod_worker, frac) = <Self as ProductCheckDistributed<E, PCS>>::prove_worker(
             pcs_param_worker,
@@ -376,7 +378,9 @@ where
             <Self as ProductCheckDistributed<E, PCS>>::verify(proof, aux_info, transcript)?;
 
         if product_check_sub_claim.final_query.1 != E::ScalarField::one() {
-            return Err(PolyIOPErrors::InvalidProof("final query is not one".to_string()));
+            return Err(PolyIOPErrors::InvalidProof(
+                "final query is not one".to_string(),
+            ));
         }
 
         end_timer!(start);
@@ -391,9 +395,18 @@ where
 mod test {
     use super::{PermutationCheck, PermutationCheckDistributed};
     use crate::{
-        new_master_worker_thread_channels, new_master_worker_channels, pcs::{prelude::MultilinearKzgPCS, PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, poly_iop::{errors::PolyIOPErrors, PolyIOP}, MultilinearProverParam
+        new_master_worker_channels, new_master_worker_thread_channels,
+        pcs::{
+            prelude::MultilinearKzgPCS, PolynomialCommitmentScheme,
+            PolynomialCommitmentSchemeDistributed,
+        },
+        poly_iop::{errors::PolyIOPErrors, PolyIOP},
+        MultilinearProverParam,
     };
-    use arithmetic::{evaluate_opt, identity_permutation_mles, random_permutation_mles, random_permutation_with_corresponding_mles, split_into_chunks, transpose, VPAuxInfo};
+    use arithmetic::{
+        evaluate_opt, identity_permutation_mles, random_permutation_mles,
+        random_permutation_with_corresponding_mles, split_into_chunks, transpose, VPAuxInfo,
+    };
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
@@ -478,58 +491,68 @@ mod test {
             WorkerProverParam = MultilinearProverParam<E>,
         >,
     {
-        let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_param, log_num_workers)?;
+        let (pcs_param_master, pcs_param_worker) =
+            PCS::prover_param_distributed(pcs_param, log_num_workers)?;
 
-        let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers,  "127.0.0.1:0");
-        
+        let (mut master_channel, worker_channels) =
+            new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
+
         // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
-        let mut transcript = <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
+        let mut transcript =
+            <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;
 
         let num_polys = fs[0].len();
         let num_vars = fs[0][0].num_vars + log_num_workers;
 
-        let handles = worker_channels.into_iter().zip(pcs_param_worker.into_iter())
-            .zip(fs.into_iter().zip(gs.into_iter()).zip(ids.into_iter().zip(perms.into_iter())))
+        let handles = worker_channels
+            .into_iter()
+            .zip(pcs_param_worker.into_iter())
+            .zip(
+                fs.into_iter()
+                    .zip(gs.into_iter())
+                    .zip(ids.into_iter().zip(perms.into_iter())),
+            )
             .map(|((mut ch, pcs_param), ((fs, gs), (ids, perms)))| {
                 spawn(move || {
                     <PolyIOP<E::ScalarField> as PermutationCheckDistributed<E, PCS>>::prove_worker(
-                        &pcs_param,
-                        &fs,
-                        &gs,
-                        &ids,
-                        &perms,
-                        &mut ch,
+                        &pcs_param, &fs, &gs, &ids, &perms, &mut ch,
                     )
                 })
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-        let (proof, prod_master) = <PolyIOP<E::ScalarField> as PermutationCheckDistributed<E, PCS>>::prove_master(
-            &pcs_param_master,
-            num_polys,
-            num_vars,
-            &mut transcript,
-            &mut master_channel,
-        )?;
+        let (proof, prod_master) =
+            <PolyIOP<E::ScalarField> as PermutationCheckDistributed<E, PCS>>::prove_master(
+                &pcs_param_master,
+                num_polys,
+                num_vars,
+                &mut transcript,
+                &mut master_channel,
+            )?;
 
-        handles.into_iter().map(|h| h.join().unwrap()).collect::<Result<Vec<_>, _>>()?;
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let mut transcript = <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
+        let mut transcript =
+            <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;
         let aux_info = VPAuxInfo {
             max_degree: num_polys + 1,
             num_variables: num_vars,
             phantom: PhantomData::default(),
         };
-        let perm_check_sub_claim = <PolyIOP<E::ScalarField> as PermutationCheckDistributed<E, PCS>>::verify(
-            &proof,
-            &aux_info,
-            &mut transcript,
-        )?;
+        let perm_check_sub_claim = <PolyIOP<E::ScalarField> as PermutationCheckDistributed<
+            E,
+            PCS,
+        >>::verify(&proof, &aux_info, &mut transcript)?;
 
         if evaluate_opt(
             &prod_master,
-            &perm_check_sub_claim.product_check_sub_claim.final_query.0[num_vars-log_num_workers..],
+            &perm_check_sub_claim.product_check_sub_claim.final_query.0
+                [num_vars - log_num_workers..],
         ) != perm_check_sub_claim.product_check_sub_claim.final_query.1
         {
             return Err(PolyIOPErrors::InvalidVerifier("wrong subclaim".to_string()));
@@ -606,7 +629,10 @@ mod test {
         Ok(())
     }
 
-    fn test_permutation_check_distributed(nv: usize, log_num_workers: usize) -> Result<(), PolyIOPErrors> {
+    fn test_permutation_check_distributed(
+        nv: usize,
+        log_num_workers: usize,
+    ) -> Result<(), PolyIOPErrors> {
         let mut rng = test_rng();
 
         let srs = MultilinearKzgPCS::<Bls12_381>::gen_srs_for_testing(&mut rng, nv)?;
@@ -617,7 +643,8 @@ mod test {
             let gs = fs.clone();
 
             let f = |x: Vec<_>| {
-                let x = x.iter()
+                let x = x
+                    .iter()
                     .map(|y| split_into_chunks(y, log_num_workers))
                     .collect::<Vec<_>>();
                 transpose(x)
@@ -640,7 +667,8 @@ mod test {
             let gs = fs.clone();
 
             let f = |x: Vec<_>| {
-                let x = x.iter()
+                let x = x
+                    .iter()
                     .map(|y| split_into_chunks(y, log_num_workers))
                     .collect::<Vec<_>>();
                 transpose(x)
@@ -651,17 +679,15 @@ mod test {
             // bad path 1: fs is not a permutation of gs under a random map
             let mut perms = perms.clone();
             perms.reverse();
-            assert!(
-                test_permutation_check_distributed_helper::<Bls12_381, Kzg>(
-                    pcs_param.clone(),
-                    log_num_workers,
-                    fs,
-                    gs,
-                    ids,
-                    perms
-                )
-                .is_err()
-            );
+            assert!(test_permutation_check_distributed_helper::<Bls12_381, Kzg>(
+                pcs_param.clone(),
+                log_num_workers,
+                fs,
+                gs,
+                ids,
+                perms
+            )
+            .is_err());
         }
 
         Ok(())

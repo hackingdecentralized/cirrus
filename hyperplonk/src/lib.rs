@@ -8,17 +8,21 @@
 
 use ark_ec::pairing::Pairing;
 use errors::HyperPlonkErrors;
-use subroutines::{pcs::{prelude::PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed}, poly_iop::prelude::PermutationCheck, MasterProverChannel, PermutationCheckDistributed, WorkerProverChannel};
+use subroutines::{
+    pcs::{prelude::PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed},
+    poly_iop::prelude::PermutationCheck,
+    MasterProverChannel, PermutationCheckDistributed, WorkerProverChannel,
+};
 use witness::WitnessColumn;
 
-mod custom_gate;
-mod errors;
+pub mod custom_gate;
+pub mod errors;
 mod mock;
 pub mod prelude;
 mod selectors;
 mod snark;
-mod snark_distributed;
-mod structs;
+pub mod snark_distributed;
+pub mod structs;
 mod utils;
 mod witness;
 
@@ -94,12 +98,12 @@ where
 
     /// Generate proving and verifying keys for distributed HyperPlonk
     /// from a given index(or a specified circuit).
-    /// 
+    ///
     /// Inputs:
     /// - `index`: HyperPlonk index
     /// - `log_num_worker`: log number of workers
     /// - `pcs_srs`: Polynomial commitment structured reference string
-    /// 
+    ///
     /// Outputs:
     /// - The distributed HyperPlonk proving key, which is a tuple of
     ///   the master proving key and a vector of worker proving keys.
@@ -108,17 +112,23 @@ where
         index: &Self::Index,
         log_num_worker: usize,
         pcs_srs: &PCS::SRS,
-    ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), HyperPlonkErrors>;
+    ) -> Result<
+        (
+            (Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>),
+            Self::VerifyingKey,
+        ),
+        HyperPlonkErrors,
+    >;
 
     /// Master prover protocol of the distributed HyperPlonk.
-    /// 
+    ///
     /// Inputs:
     /// - `pk`: distributed HyperPlonk master proving key
     /// - `pub_input`: online public input
     /// - `witnesses`: witness assignment
     /// - `log_num_worker`: log number of workers
     /// - `master_channel`: master prover channel
-    /// 
+    ///
     /// Outputs:
     /// - The distributed HyperPlonk proof
     fn prove_master(
@@ -130,7 +140,7 @@ where
     ) -> Result<Self::Proof, HyperPlonkErrors>;
 
     /// Worker prover protocol of the distributed HyperPlonk.
-    /// 
+    ///
     /// Inputs:
     /// - `pk`: distributed HyperPlonk worker proving key
     /// - `worker_channel`: worker prover channel
@@ -140,12 +150,12 @@ where
     ) -> Result<(), HyperPlonkErrors>;
 
     /// Verify the distributed HyperPlonk proof.
-    /// 
+    ///
     /// Inputs:
     /// - `vk`: distributed HyperPlonk verifying key
     /// - `pub_input`: online public input
     /// - `proof`: distributed HyperPlonk proof
-    /// 
+    ///
     /// Outputs:
     /// - Return a boolean on whether the verification is successful
     fn verify(

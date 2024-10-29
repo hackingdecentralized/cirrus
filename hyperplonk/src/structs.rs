@@ -14,7 +14,8 @@ use ark_std::log2;
 use std::sync::Arc;
 use subroutines::{
     pcs::{PolynomialCommitmentScheme, PolynomialCommitmentSchemeDistributed},
-    poly_iop::prelude::{PermutationCheck, ZeroCheck}, PermutationCheckDistributed,
+    poly_iop::prelude::{PermutationCheck, ZeroCheck},
+    PermutationCheckDistributed,
 };
 
 /// The proof for the HyperPlonk PolyIOP, consists of the following:

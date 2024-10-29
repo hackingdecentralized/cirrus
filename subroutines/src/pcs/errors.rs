@@ -31,7 +31,7 @@ pub enum PCSError {
     TranscriptError(TranscriptError),
     /// ArithErrors error {0}
     ArithErrors(ArithErrors),
-    /// 
+    ///
     DistributedErrors(DistributedError),
 }
 

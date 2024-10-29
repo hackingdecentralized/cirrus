@@ -315,19 +315,35 @@ impl<F: PrimeField> VirtualPolynomial<F> {
 
         let nv_worker_provers = self.aux_info.num_variables - n_log_provers; // number of variables for worker provers
 
-        let distributed_poly: Vec<_> = (0..1<<n_log_provers).map( |i| {
-            let aux_info = VPAuxInfo {
-                num_variables: self.aux_info.num_variables - n_log_provers,
-                ..self.aux_info.clone()
-            };
-            let flattened_mle_extensions = self.flattened_ml_extensions
-                .iter()
-                .map(|x| x.evaluations[i*(1<<nv_worker_provers)..(i+1)*(1<<nv_worker_provers)].to_vec())
-                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(nv_worker_provers, x)))
-                .collect::<Vec<_>>();
+        let distributed_poly: Vec<_> = (0..1 << n_log_provers)
+            .map(|i| {
+                let aux_info = VPAuxInfo {
+                    num_variables: self.aux_info.num_variables - n_log_provers,
+                    ..self.aux_info.clone()
+                };
+                let flattened_mle_extensions = self
+                    .flattened_ml_extensions
+                    .iter()
+                    .map(|x| {
+                        x.evaluations
+                            [i * (1 << nv_worker_provers)..(i + 1) * (1 << nv_worker_provers)]
+                            .to_vec()
+                    })
+                    .map(|x| {
+                        Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+                            nv_worker_provers,
+                            x,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
 
-            VirtualPolynomial::new_from_raw(aux_info, self.products.clone(), flattened_mle_extensions)
-        }).collect();
+                VirtualPolynomial::new_from_raw(
+                    aux_info,
+                    self.products.clone(),
+                    flattened_mle_extensions,
+                )
+            })
+            .collect();
 
         Ok(distributed_poly)
     }

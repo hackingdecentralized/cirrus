@@ -4,10 +4,10 @@
 // You should have received a copy of the MIT License
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
+pub mod distributed;
 pub mod pcs;
 pub mod poly_iop;
-pub mod distributed;
 
+pub use distributed::prelude::*;
 pub use pcs::prelude::*;
 pub use poly_iop::prelude::*;
-pub use distributed::prelude::*;

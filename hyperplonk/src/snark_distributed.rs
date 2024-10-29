@@ -3,19 +3,28 @@ use std::{marker::PhantomData, sync::Arc};
 use arithmetic::{identity_permutation, split_into_chunks, transpose, VPAuxInfo};
 use ark_ec::pairing::Pairing;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_std::{log2, One, Zero, start_timer, end_timer};
+use ark_std::{end_timer, log2, start_timer, One, Zero};
 use rayon::iter::IntoParallelRefIterator;
 #[cfg(feature = "parallel")]
 use rayon::iter::ParallelIterator;
-use subroutines::{pcs::PolynomialCommitmentSchemeDistributed, BatchProof, Commitment, MultilinearProverParam, PermutationCheckDistributed, PolyIOP, WorkerProverChannel, ZeroCheck, ZeroCheckDistributed};
+use subroutines::{
+    pcs::PolynomialCommitmentSchemeDistributed, BatchProof, Commitment, MultilinearProverParam,
+    PermutationCheckDistributed, PolyIOP, WorkerProverChannel, ZeroCheck, ZeroCheckDistributed,
+};
 use transcript::IOPTranscript;
 
 use crate::{
     errors::HyperPlonkErrors,
     prelude::WitnessColumn,
-    structs::{HyperPlonkIndex, HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster, HyperPlonkProvingKeyWorker, HyperPlonkVerifyingKey},
-    utils::{build_f_product, build_f_raw, eval_f, eval_perm_gate_distributed, prover_sanity_check, PcsAccumulatorMaster, PcsAccumulatorWorker},
-    HyperPlonkSNARKDistributed
+    structs::{
+        HyperPlonkIndex, HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster,
+        HyperPlonkProvingKeyWorker, HyperPlonkVerifyingKey,
+    },
+    utils::{
+        build_f_product, build_f_raw, eval_f, eval_perm_gate_distributed, prover_sanity_check,
+        PcsAccumulatorMaster, PcsAccumulatorWorker,
+    },
+    HyperPlonkSNARKDistributed,
 };
 
 impl<E, PCS> HyperPlonkSNARKDistributed<E, PCS> for PolyIOP<E::ScalarField>
@@ -44,13 +53,18 @@ where
         index: &Self::Index,
         log_num_worker: usize,
         pcs_srs: &PCS::SRS,
-    ) -> Result<((Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>), Self::VerifyingKey), HyperPlonkErrors> {
+    ) -> Result<
+        (
+            (Self::ProvingKeyMaster, Vec<Self::ProvingKeyWorker>),
+            Self::VerifyingKey,
+        ),
+        HyperPlonkErrors,
+    > {
         let num_vars = index.num_variables();
         let supported_ml_degree = num_vars;
 
         let (pcs_prover_param, pcs_verifier_param) =
             PCS::trim(pcs_srs, None, Some(supported_ml_degree))?;
-
 
         let mut permutation_oracles = Vec::new();
         let mut perm_comms = Vec::new();
@@ -89,8 +103,13 @@ where
         let selector_oracles_distributed = transpose(selector_oracles_distributed);
 
         let identity_permutation = identity_permutation(num_vars, index.num_witness_columns());
-        let identity_oracles = identity_permutation.chunks(chunk_size)
-            .map(|chunk| Arc::new(DenseMultilinearExtension::from_evaluations_slice(num_vars, chunk)))
+        let identity_oracles = identity_permutation
+            .chunks(chunk_size)
+            .map(|chunk| {
+                Arc::new(DenseMultilinearExtension::from_evaluations_slice(
+                    num_vars, chunk,
+                ))
+            })
             .collect::<Vec<_>>();
         let identity_oracles_distributed = identity_oracles
             .par_iter()
@@ -98,7 +117,8 @@ where
             .collect::<Vec<_>>();
         let identity_oracles_distributed = transpose(identity_oracles_distributed);
 
-        let (pcs_param_master, pcs_param_worker) = PCS::prover_param_distributed(pcs_prover_param, log_num_worker)?;
+        let (pcs_param_master, pcs_param_worker) =
+            PCS::prover_param_distributed(pcs_prover_param, log_num_worker)?;
         Ok((
             (
                 HyperPlonkProvingKeyMaster {
@@ -110,15 +130,22 @@ where
                 pcs_param_worker
                     .into_iter()
                     .zip(selector_oracles_distributed.into_iter())
-                    .zip(permutation_oracles_distributed.into_iter().zip(identity_oracles_distributed.into_iter()))
-                    .map(|((pcs_param, selector_oracles), (perm_oracles, id_oracles))|
-                        HyperPlonkProvingKeyWorker {
-                            params: index.params.clone(),
-                            selector_oracles,
-                            perm_oracles,
-                            id_oracles,
-                            pcs_param,
-                        })
+                    .zip(
+                        permutation_oracles_distributed
+                            .into_iter()
+                            .zip(identity_oracles_distributed.into_iter()),
+                    )
+                    .map(
+                        |((pcs_param, selector_oracles), (perm_oracles, id_oracles))| {
+                            HyperPlonkProvingKeyWorker {
+                                params: index.params.clone(),
+                                selector_oracles,
+                                perm_oracles,
+                                id_oracles,
+                                pcs_param,
+                            }
+                        },
+                    )
                     .collect(),
             ),
             HyperPlonkVerifyingKey {
@@ -158,11 +185,17 @@ where
         // =======================================================================
         let step = start_timer!(|| "distribute and commit witnesses; master");
 
-        assert!(num_vars >= log_num_workers + 1, "num_vars must be greater than log_num_workers");
-        let witnesses_distribution = witnesses.iter()
+        assert!(
+            num_vars >= log_num_workers + 1,
+            "num_vars must be greater than log_num_workers"
+        );
+        let witnesses_distribution = witnesses
+            .iter()
             .map(|w| {
-                w.0.chunks(1 << (num_vars - log_num_workers)).collect::<Vec<_>>()
-            }).collect::<Vec<_>>();
+                w.0.chunks(1 << (num_vars - log_num_workers))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         let witnesses_distribution = transpose(witnesses_distribution);
 
         master_channel.send_different(witnesses_distribution)?;
@@ -204,15 +237,17 @@ where
         // polynomials and the permutation oracles.
         // =======================================================================
 
-        let step = start_timer!(|| "Distributed permutation check on witnesses and permutations; master");
+        let step =
+            start_timer!(|| "Distributed permutation check on witnesses and permutations; master");
 
-        let (perm_check_proof, prod_master) = <Self as PermutationCheckDistributed<E, PCS>>::prove_master(
-            &pk.pcs_param,
-            witnesses.len(),
-            num_vars,
-            &mut transcript,
-            master_channel,
-        )?;
+        let (perm_check_proof, prod_master) =
+            <Self as PermutationCheckDistributed<E, PCS>>::prove_master(
+                &pk.pcs_param,
+                witnesses.len(),
+                num_vars,
+                &mut transcript,
+                master_channel,
+            )?;
 
         master_channel.send_different(prod_master.evaluations.clone())?;
 
@@ -231,12 +266,14 @@ where
             &perm_check_point[0..(num_vars - log_num_workers)],
             &[E::ScalarField::zero()],
             &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
-        ].concat();
+        ]
+        .concat();
         let point3 = [
             &perm_check_point[0..(num_vars - log_num_workers)],
             &[E::ScalarField::one()],
             &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
-        ].concat();
+        ]
+        .concat();
         let mut point4 = vec![E::ScalarField::one(); num_vars];
         point4[num_vars - log_num_workers] = E::ScalarField::zero();
         pcs_acc.insert_point(point1);
@@ -250,25 +287,29 @@ where
             &vec![E::ScalarField::one(); num_vars - 1 - log_num_workers][..],
             &[E::ScalarField::zero()],
             &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
-        ].concat();
+        ]
+        .concat();
 
         let point2 = [
             &[E::ScalarField::zero()],
             &vec![E::ScalarField::one(); num_vars - log_num_workers][..],
             &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
-        ].concat();
+        ]
+        .concat();
 
         let point4 = [
             &[E::ScalarField::zero()],
             &perm_check_point[0..(num_vars - log_num_workers - 1)],
             &perm_check_point[(num_vars - log_num_workers)..],
-        ].concat();
+        ]
+        .concat();
 
         let point5 = [
             &[E::ScalarField::one()],
             &perm_check_point[0..(num_vars - log_num_workers - 1)],
             &perm_check_point[(num_vars - log_num_workers)..],
-        ].concat();
+        ]
+        .concat();
 
         pcs_acc.insert_point(point1);
         pcs_acc.insert_point(point2);
@@ -334,7 +375,8 @@ where
             .map(|w| Arc::new(DenseMultilinearExtension::from_evaluations_vec(num_vars, w)))
             .collect::<Vec<_>>();
 
-        witness_polys.iter()
+        witness_polys
+            .iter()
             .map(|w| PCS::commit_distributed_worker(&pk.pcs_param, w, worker_channel))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -354,10 +396,7 @@ where
             &witness_polys,
         )?;
 
-        <Self as ZeroCheckDistributed<E::ScalarField>>::prove_worker(
-            &fx,
-            worker_channel,
-        )?;
+        <Self as ZeroCheckDistributed<E::ScalarField>>::prove_worker(&fx, worker_channel)?;
 
         end_timer!(step);
 
@@ -365,7 +404,8 @@ where
         // 3. Worker prover runs distributed permutation check on the witness
         // polynomials and the permutation oracles.
         // =======================================================================
-        let step = start_timer!(|| "Distributed permutation check on witnesses and permutations; worker");
+        let step =
+            start_timer!(|| "Distributed permutation check on witnesses and permutations; worker");
 
         let (prod_worker, frac) = <Self as PermutationCheckDistributed<E, PCS>>::prove_worker(
             &pk.pcs_param,
@@ -386,7 +426,10 @@ where
 
         let prod_master = {
             let f: E::ScalarField = worker_channel.recv()?;
-            Arc::new(DenseMultilinearExtension::from_evaluations_vec(num_vars, vec![f; 1 << num_vars]))
+            Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                vec![f; 1 << num_vars],
+            ))
         };
 
         pcs_acc.insert_poly(&prod_master);
@@ -455,10 +498,12 @@ where
         let prod_worker_evals = &proof.evaluations[4..9];
         let frac_evals = &proof.evaluations[9..12];
         let perm_evals = &proof.evaluations[12..12 + num_witness_columns];
-        let witness_perm_evals = &proof.evaluations[12 + num_witness_columns..12 + 2*num_witness_columns];
-        let witness_gate_evals = &proof.evaluations[12 + 2*num_witness_columns..12 + 3*num_witness_columns];
-        let selector_evals =
-            &proof.evaluations[12 + 3*num_witness_columns..12 + 3*num_witness_columns + num_selector_columns];
+        let witness_perm_evals =
+            &proof.evaluations[12 + num_witness_columns..12 + 2 * num_witness_columns];
+        let witness_gate_evals =
+            &proof.evaluations[12 + 2 * num_witness_columns..12 + 3 * num_witness_columns];
+        let selector_evals = &proof.evaluations
+            [12 + 3 * num_witness_columns..12 + 3 * num_witness_columns + num_selector_columns];
 
         // zero check
 
@@ -493,7 +538,7 @@ where
         let perm_check_subclaim = <Self as PermutationCheckDistributed<E, PCS>>::verify(
             &proof.perm_check_proof,
             &aux_info,
-            &mut transcript
+            &mut transcript,
         )?;
 
         let perm_check_point = perm_check_subclaim
@@ -523,20 +568,22 @@ where
             .map(|i| E::ScalarField::from((i * (1 << num_vars)) as u128) + id1)
             .collect::<Vec<_>>();
 
-        if expected_eval != eval_perm_gate_distributed(
-            prod_master_evals,
-            prod_worker_evals,
-            frac_evals,
-            perm_evals,
-            &id_evals[..],
-            witness_perm_evals,
-            alpha1,
-            alpha2,
-            beta,
-            gamma,
-            perm_check_point[num_vars - 1],
-            perm_check_point[num_vars - log_num_workers - 1],
-        )? {
+        if expected_eval
+            != eval_perm_gate_distributed(
+                prod_master_evals,
+                prod_worker_evals,
+                frac_evals,
+                perm_evals,
+                &id_evals[..],
+                witness_perm_evals,
+                alpha1,
+                alpha2,
+                beta,
+                gamma,
+                perm_check_point[num_vars - 1],
+                perm_check_point[num_vars - log_num_workers - 1],
+            )?
+        {
             return Err(HyperPlonkErrors::InvalidVerifier(
                 "evaluation of identity constraint(permutation check) failed".to_string(),
             ));
@@ -552,16 +599,29 @@ mod tests {
 
     use ark_bls12_381::Bls12_381;
     use ark_std::{test_rng, One};
-    use subroutines::{new_master_worker_thread_channels, new_master_worker_channels, MultilinearKzgPCS, PolynomialCommitmentScheme};
+    use subroutines::{
+        new_master_worker_channels, new_master_worker_thread_channels, MultilinearKzgPCS,
+        PolynomialCommitmentScheme,
+    };
 
-    use crate::{prelude::{CustomizedGates, SelectorColumn}, structs::HyperPlonkParams};
+    use crate::{
+        prelude::{CustomizedGates, SelectorColumn},
+        structs::HyperPlonkParams,
+    };
 
     use super::*;
 
     #[test]
     fn test() {
-        let test = &[[1,2,4,5, 6, 7],[9,20,1,3,2,3],[9,20,1,3,10, 3]];
-        dbg!(test.iter().map(|t| t.chunks(2).collect::<Vec<_>>()).collect::<Vec<_>>());
+        let test = &[
+            [1, 2, 4, 5, 6, 7],
+            [9, 20, 1, 3, 2, 3],
+            [9, 20, 1, 3, 10, 3],
+        ];
+        dbg!(test
+            .iter()
+            .map(|t| t.chunks(2).collect::<Vec<_>>())
+            .collect::<Vec<_>>());
     }
 
     #[test]
@@ -592,26 +652,35 @@ mod tests {
         };
 
         // w1: 0, 1, 2, 3, 0, 1, 2, 3
-        let w1 = WitnessColumn((0..num_constraints).map(|i| E::ScalarField::from((i%4) as u128)).collect());
+        let w1 = WitnessColumn(
+            (0..num_constraints)
+                .map(|i| E::ScalarField::from((i % 4) as u128))
+                .collect(),
+        );
         // w2: 0, 1, 8, 27, 0, 1, 8, 27
-        let w2 = WitnessColumn((0..num_constraints).map(|i| i%4).map(|i| E::ScalarField::from((i*i*i) as u128)).collect());
+        let w2 = WitnessColumn(
+            (0..num_constraints)
+                .map(|i| i % 4)
+                .map(|i| E::ScalarField::from((i * i * i) as u128))
+                .collect(),
+        );
         let permutation = vec![
-            E::ScalarField::from(8u128),    // 0: 0
-            E::ScalarField::one(),          // 1: 1
-            E::ScalarField::from(2u128),    // 2: 2
-            E::ScalarField::from(3u128),    // 3: 3
-            E::ScalarField::zero(),         // 4: 0
-            E::ScalarField::from(5u128),    // 5: 1
-            E::ScalarField::from(6u128),    // 6: 2
-            E::ScalarField::from(7u128),    // 7: 3
-            E::ScalarField::from(4u128),    // 8: 0
-            E::ScalarField::from(9u128),    // 9: 1
-            E::ScalarField::from(10u128),   // 10: 8
-            E::ScalarField::from(15u128),   // 11: 27
-            E::ScalarField::from(12u128),   // 12: 0
-            E::ScalarField::from(13u128),   // 13: 1
-            E::ScalarField::from(14u128),   // 14: 8
-            E::ScalarField::from(11u128),   // 15: 27
+            E::ScalarField::from(8u128),  // 0: 0
+            E::ScalarField::one(),        // 1: 1
+            E::ScalarField::from(2u128),  // 2: 2
+            E::ScalarField::from(3u128),  // 3: 3
+            E::ScalarField::zero(),       // 4: 0
+            E::ScalarField::from(5u128),  // 5: 1
+            E::ScalarField::from(6u128),  // 6: 2
+            E::ScalarField::from(7u128),  // 7: 3
+            E::ScalarField::from(4u128),  // 8: 0
+            E::ScalarField::from(9u128),  // 9: 1
+            E::ScalarField::from(10u128), // 10: 8
+            E::ScalarField::from(15u128), // 11: 27
+            E::ScalarField::from(12u128), // 12: 0
+            E::ScalarField::from(13u128), // 13: 1
+            E::ScalarField::from(14u128), // 14: 8
+            E::ScalarField::from(11u128), // 15: 27
         ];
         let q = SelectorColumn(vec![E::ScalarField::one(); num_constraints]);
         let index = HyperPlonkIndex {
@@ -621,7 +690,8 @@ mod tests {
         };
 
         // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
-        let (mut master_channel, worker_channels) = new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
+        let (mut master_channel, worker_channels) =
+            new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
         let ((pk_master, pk_workers), vk) =
             PolyIOP::<E::ScalarField>::preprocess(&index, log_num_workers, &pcs_srs)?;
@@ -631,11 +701,18 @@ mod tests {
             .zip(worker_channels.into_iter())
             .map(|(pk, mut channel)| {
                 spawn(move || {
-                    <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(&pk, &mut channel)
+                    <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+                        E,
+                        MultilinearKzgPCS<E>,
+                    >>::prove_worker(&pk, &mut channel)
                 })
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-        let proof = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_master(
+        let proof = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+            E,
+            MultilinearKzgPCS<E>,
+        >>::prove_master(
             &pk_master,
             w1.clone().0[..num_pub_input].as_ref(),
             &[w1.clone(), w2],
@@ -647,11 +724,10 @@ mod tests {
             handle.join().unwrap()?;
         }
 
-        assert!(
-            <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::verify(
-                &vk, &w1.0[..num_pub_input], &proof
-            )?
-        );
+        assert!(<PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+            E,
+            MultilinearKzgPCS<E>,
+        >>::verify(&vk, &w1.0[..num_pub_input], &proof)?);
 
         Ok(())
     }

@@ -6,11 +6,14 @@
 
 //! This module implements the sum check protocol.
 
-use crate::{poly_iop::{
-    errors::PolyIOPErrors,
-    structs::{IOPProof, IOPProverMessage, IOPProverState, IOPVerifierState},
-    PolyIOP,
-}, MasterProverChannel, WorkerProverChannel};
+use crate::{
+    poly_iop::{
+        errors::PolyIOPErrors,
+        structs::{IOPProof, IOPProverMessage, IOPProverState, IOPVerifierState},
+        PolyIOP,
+    },
+    MasterProverChannel, WorkerProverChannel,
+};
 use arithmetic::{VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
@@ -276,11 +279,13 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let phase2 = master_poly_aux_info.num_variables;
 
         if phase2 != master_channel.log_num_workers() {
-            return Err(PolyIOPErrors::InvalidWorkerNumber)
+            return Err(PolyIOPErrors::InvalidWorkerNumber);
         }
 
         if phase1 + phase2 != poly_aux_info.num_variables {
-            return Err(PolyIOPErrors::InvalidParameters(String::from("poly aux info doesn't match")))
+            return Err(PolyIOPErrors::InvalidParameters(String::from(
+                "poly aux info doesn't match",
+            )));
         }
 
         let mut challenge = None;
@@ -304,21 +309,27 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
         let worker_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
 
-        worker_aux_infos.par_iter().map(|worker_aux_info|
-            (worker_aux_info == &worker_poly_aux_info).then_some(()).ok_or(PolyIOPErrors::WorkerNotMatching)
-        ).collect::<Result<Vec<_>, _>>()?;
+        worker_aux_infos
+            .par_iter()
+            .map(|worker_aux_info| {
+                (worker_aux_info == &worker_poly_aux_info)
+                    .then_some(())
+                    .ok_or(PolyIOPErrors::WorkerNotMatching)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         for _ in 0..phase1 {
             master_channel.send_uniform(&challenge)?;
             let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
-            let evaluations = worker_prover_msgs.iter()
-                .fold( vec![F::zero(); eval_len],
-                    | ev1, ev2 | {
-                        ev1.into_iter().zip(ev2.evaluations.iter())
+            let evaluations =
+                worker_prover_msgs
+                    .iter()
+                    .fold(vec![F::zero(); eval_len], |ev1, ev2| {
+                        ev1.into_iter()
+                            .zip(ev2.evaluations.iter())
                             .map(|(e1, e2)| e1 + e2)
                             .collect::<Vec<_>>()
-                    }
-                );
+                    });
 
             let prover_msg = IOPProverMessage { evaluations };
             transcript.append_serializable_element(b"prover msg", &prover_msg)?;
@@ -335,24 +346,22 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         master_channel.send_uniform(&challenge)?;
         let flattened_ml_extensions = {
             let evals = master_channel.recv::<Vec<F>>()?;
-            let len = evals.get(0).map(|x| x.len()).ok_or(PolyIOPErrors::InvalidDistributedMessage)?;
-            let mut x = evals
-                .into_iter().map(|x| x.into_iter())
-                .collect::<Vec<_>>();
+            let len = evals
+                .get(0)
+                .map(|x| x.len())
+                .ok_or(PolyIOPErrors::InvalidDistributedMessage)?;
+            let mut x = evals.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>();
             (0..len)
-                .map(
-                    |_| x.iter_mut()
-                    .map(|y| y.next().unwrap())
-                    .collect::<Vec<_>>()
-                )
-                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(phase2,x)))
+                .map(|_| x.iter_mut().map(|y| y.next().unwrap()).collect::<Vec<_>>())
+                .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(phase2, x)))
                 .collect::<Vec<_>>()
         };
 
         let poly = VirtualPolynomial::new_from_raw(
             master_poly_aux_info.clone(),
             poly_products.clone(),
-            flattened_ml_extensions);
+            flattened_ml_extensions,
+        );
 
         end_timer!(construct_poly_timer);
 
@@ -368,7 +377,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
             return Ok(IOPProof {
                 point: challenges,
                 proofs: prover_msgs,
-            })
+            });
         }
 
         let mut prover_state = IOPProverState::prover_init(&poly)?;
@@ -399,7 +408,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let start = start_timer!(|| "Distributed sum check; worker");
         let start_data: [u8; 25] = worker_channel.recv()?;
         if &start_data != b"sum check starting signal" {
-            return Err(PolyIOPErrors::InvalidDistributedMessage)
+            return Err(PolyIOPErrors::InvalidDistributedMessage);
         }
         worker_channel.send(&poly.aux_info)?;
 
@@ -410,17 +419,20 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         //    i.e., log worker number is the same as variable number
         if poly.aux_info.num_variables == 0 {
             worker_channel.send(
-                &poly.flattened_ml_extensions.iter()
+                &poly
+                    .flattened_ml_extensions
+                    .iter()
                     .map(|mle| mle.evaluations[0])
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
             )?;
-            return Ok(())
+            return Ok(());
         }
 
         let mut prover_state = IOPProverState::prover_init(poly)?;
 
         for i in 0..poly.aux_info.num_variables {
-            let prover_msg = IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
+            let prover_msg =
+                IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
             worker_channel.send(&prover_msg)?;
             // dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
             challenge = worker_channel.recv()?;
@@ -430,7 +442,9 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let construct_poly_timer = start_timer!(|| "construct poly; worker");
 
         let challenge = challenge.unwrap();
-        let evaluations = prover_state.poly.flattened_ml_extensions
+        let evaluations = prover_state
+            .poly
+            .flattened_ml_extensions
             .iter()
             .map(|mle| {
                 let zero_value = mle.evaluations[0];
@@ -450,17 +464,17 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 #[cfg(test)]
 mod test {
 
-    use crate::new_master_worker_thread_channels;
     use crate::new_master_worker_channels;
+    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Fr;
     use ark_ff::UniformRand;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
     use ark_std::test_rng;
-    use std::{sync::Arc, thread::spawn};
-    use std::thread;
     use std::net::TcpListener;
+    use std::thread;
+    use std::{sync::Arc, thread::spawn};
 
     fn test_sumcheck(
         nv: usize,
@@ -534,34 +548,54 @@ mod test {
         num_multiplicands_range: (usize, usize),
         num_products: usize,
     ) -> Result<(), PolyIOPErrors> {
-        assert!(log_num_workers <= nv, "log number of provers should be no larger than number of variables");
+        assert!(
+            log_num_workers <= nv,
+            "log number of provers should be no larger than number of variables"
+        );
 
         let mut rng = test_rng();
         let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
 
-        let (mut master_channel, worker_channels) = new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
+        let (mut master_channel, worker_channels) =
+            new_master_worker_channels(false, log_num_workers, "127.0.0.1:0");
 
         let (poly, asserted_sum) =
             VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
 
         let distributed_poly = poly.distribute(log_num_workers)?;
 
-        let worker_handles = worker_channels.into_iter()
+        let worker_handles = worker_channels
+            .into_iter()
             .zip(distributed_poly)
-            .map( |(mut ch, poly)| 
-                (ch, poly.aux_info, poly.products, poly.flattened_ml_extensions)
-            )
-            .map( |(mut ch, aux_info, products, mles)| {
+            .map(|(mut ch, poly)| {
+                (
+                    ch,
+                    poly.aux_info,
+                    poly.products,
+                    poly.flattened_ml_extensions,
+                )
+            })
+            .map(|(mut ch, aux_info, products, mles)| {
                 spawn(move || {
                     <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_worker(
-                        &VirtualPolynomial::new_from_raw(aux_info, products, mles), &mut ch)
+                        &VirtualPolynomial::new_from_raw(aux_info, products, mles),
+                        &mut ch,
+                    )
                 })
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         let proof = <PolyIOP<Fr> as SumCheckDistributed<Fr>>::prove_master(
-            &poly.aux_info, &poly.products, log_num_workers, &mut transcript, &mut master_channel)?;
-        
-        worker_handles.into_iter().map(|x| x.join().unwrap())
+            &poly.aux_info,
+            &poly.products,
+            log_num_workers,
+            &mut transcript,
+            &mut master_channel,
+        )?;
+
+        worker_handles
+            .into_iter()
+            .map(|x| x.join().unwrap())
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut transcript = <PolyIOP<Fr> as SumCheck<Fr>>::init_transcript();
@@ -587,7 +621,8 @@ mod test {
         let num_multiplicands_range = (1, 3);
         let num_products = 5;
 
-        let (poly, _) = VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
+        let (poly, _) =
+            VirtualPolynomial::<Fr>::rand(nv, num_multiplicands_range, num_products, &mut rng)?;
         let distributed_poly = poly.distribute(log_num_workers)?;
 
         assert_eq!(
