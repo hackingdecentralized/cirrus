@@ -1,5 +1,5 @@
+use super::{network_channel, thread_channel};
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
-use super::{thread_channel, network_channel};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub enum MasterProverChannelEnum {
@@ -15,17 +15,20 @@ pub enum WorkerProverChannelEnum {
 
 // Implement MasterProverChannel for the enum
 impl MasterProverChannel for MasterProverChannelEnum {
-    fn send(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+    fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
         match self {
-            MasterProverChannelEnum::Thread(channel) => channel.send(msg),
-            MasterProverChannelEnum::Socket(channel) => channel.send(msg),
+            MasterProverChannelEnum::Thread(channel) => channel.send_uniform(msg),
+            MasterProverChannelEnum::Socket(channel) => channel.send_uniform(msg),
         }
     }
 
-    fn send_all<T: CanonicalSerialize + Send>(&mut self, msg: Vec<T>) -> Result<(), DistributedError> {
+    fn send_different<T: CanonicalSerialize + Send>(
+        &mut self,
+        msg: Vec<T>,
+    ) -> Result<(), DistributedError> {
         match self {
-            MasterProverChannelEnum::Thread(channel) => channel.send_all(msg),
-            MasterProverChannelEnum::Socket(channel) => channel.send_all(msg),
+            MasterProverChannelEnum::Thread(channel) => channel.send_different(msg),
+            MasterProverChannelEnum::Socket(channel) => channel.send_different(msg),
         }
     }
 
@@ -72,10 +75,11 @@ impl WorkerProverChannel for WorkerProverChannelEnum {
 pub fn new_master_worker_channels(
     use_sockets: bool,
     log_num_workers: usize,
-    worker_addrs: Vec<&str>,
+    master_addr: &str,
 ) -> (MasterProverChannelEnum, Vec<WorkerProverChannelEnum>) {
     if use_sockets {
-        let (master_socket, worker_sockets) = network_channel::new_master_worker_socket_channels(log_num_workers, worker_addrs);
+        let (master_socket, worker_sockets) =
+            network_channel::new_master_worker_socket_channels(log_num_workers, master_addr);
         let master = MasterProverChannelEnum::Socket(master_socket);
         let workers = worker_sockets
             .into_iter()
@@ -84,7 +88,8 @@ pub fn new_master_worker_channels(
 
         (master, workers)
     } else {
-        let (master_thread, worker_threads) = thread_channel::new_master_worker_thread_channels(log_num_workers);
+        let (master_thread, worker_threads) =
+            thread_channel::new_master_worker_thread_channels(log_num_workers);
         let master = MasterProverChannelEnum::Thread(master_thread);
         let workers = worker_threads
             .into_iter()

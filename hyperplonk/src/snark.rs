@@ -721,7 +721,9 @@ mod tests {
 
         // bad path 1: wrong permutation
         let rand_perm: Vec<E::ScalarField> = random_permutation(nv, num_witnesses, &mut rng)
-            .into_iter().map(E::ScalarField::from).collect();
+            .into_iter()
+            .map(E::ScalarField::from)
+            .collect();
         let mut bad_index = index;
         bad_index.permutation = rand_perm;
         // generate pk and vks

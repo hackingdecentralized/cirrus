@@ -10,7 +10,7 @@ use ark_poly::MultilinearExtension;
 use ark_std::{end_timer, rand::RngCore, start_timer};
 #[cfg(feature = "parallel")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::{sync::Arc, cmp::min};
+use std::{cmp::min, sync::Arc};
 
 pub use ark_poly::DenseMultilinearExtension;
 
@@ -121,11 +121,7 @@ pub fn identity_permutation_mles<F: PrimeField>(
     res
 }
 
-pub fn random_permutation<R: RngCore>(
-    num_vars: usize,
-    num_chunks: usize,
-    rng: &mut R,
-) -> Vec<u64> {
+pub fn random_permutation<R: RngCore>(num_vars: usize, num_chunks: usize, rng: &mut R) -> Vec<u64> {
     let len = (num_chunks as u64) * (1u64 << num_vars);
     let mut s_id_vec: Vec<u64> = (0..len).collect();
     let mut s_perm_vec = vec![];
@@ -143,7 +139,10 @@ pub fn random_permutation_mles<F: PrimeField, R: RngCore>(
     rng: &mut R,
 ) -> Vec<Arc<DenseMultilinearExtension<F>>> {
     let s_perm_vec: Vec<_> = random_permutation(num_vars, num_chunks, rng)
-        .iter().cloned().map(F::from).collect();
+        .iter()
+        .cloned()
+        .map(F::from)
+        .collect();
     let mut res = vec![];
     let n = 1 << num_vars;
     for i in 0..num_chunks {
@@ -185,18 +184,24 @@ pub fn random_permutation_with_corresponding_mles<F: PrimeField, R: RngCore>(
     }
 
     let res = (
-        (0..total_num).map(|x| F::from(x as u128)).collect::<Vec<_>>(),
-        perm.iter().cloned().map(F::from).collect::<Vec<_>>(), evals
+        (0..total_num)
+            .map(|x| F::from(x as u128))
+            .collect::<Vec<_>>(),
+        perm.iter().cloned().map(F::from).collect::<Vec<_>>(),
+        evals,
     );
-    
+
     let f = |x: &Vec<F>| {
         x.chunks(1 << num_vars)
-            .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_slice(num_vars, x)))
+            .map(|x| {
+                Arc::new(DenseMultilinearExtension::from_evaluations_slice(
+                    num_vars, x,
+                ))
+            })
             .collect()
     };
 
     (f(&res.0), f(&res.1), f(&res.2))
-
 }
 
 pub fn evaluate_opt<F: Field>(poly: &DenseMultilinearExtension<F>, point: &[F]) -> F {

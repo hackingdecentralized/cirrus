@@ -8,6 +8,9 @@ pub use crate::poly_iop::{
     errors::PolyIOPErrors,
     perm_check::{PermutationCheck, PermutationCheckDistributed},
     prod_check::ProductCheck,
+    structs::IOPProof,
+    sum_check::SumCheck,
+    utils::*,
     zero_check::{ZeroCheck, ZeroCheckDistributed},
-    structs::IOPProof, sum_check::SumCheck, utils::*, PolyIOP,
+    PolyIOP,
 };

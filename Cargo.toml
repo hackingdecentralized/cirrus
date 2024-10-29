@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "arithmetic",
+  "cirrus",
   "hyperplonk",
   "subroutines",
   "transcript",

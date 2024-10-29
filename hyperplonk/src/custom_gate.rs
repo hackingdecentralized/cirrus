@@ -4,6 +4,7 @@
 // You should have received a copy of the MIT License
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::cmp::max;
 
 /// Customized gate is a list of tuples of
@@ -30,7 +31,7 @@ use ark_std::cmp::max;
 /// NOTE: here coeff is a signed integer, instead of a field element
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CustomizedGates {
-    pub(crate) gates: Vec<(i64, Option<usize>, Vec<usize>)>,
+    pub gates: Vec<(i64, Option<usize>, Vec<usize>)>,
 }
 
 impl CustomizedGates {

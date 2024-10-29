@@ -4,16 +4,20 @@ use displaydoc::Display;
 pub enum DistributedError {
     /// An error during (de)serialization: {0}
     SerializationErrors(ark_serialize::SerializationError),
-    /// Master prover failed to send message
+    /// Master prover failed to send_uniform message
     MasterSendError,
     /// Master prover failed to receive message
     MasterRecvError,
-    /// Worker prover failed to send message
+    /// Worker prover failed to send_uniform message
     WorkerSendError,
     /// Worker prover failed to receive message
     WorkerRecvError,
     /// Channel creat error
     ChCreateError,
+    /// Master listen error
+    MasterListenError,
+    /// Worker connect error
+    WorkerConnectError,
 }
 
 impl From<ark_serialize::SerializationError> for DistributedError {

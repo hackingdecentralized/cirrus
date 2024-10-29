@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 /// A row of witnesses of width `#wires`
 #[derive(Debug, Clone)]
-pub struct WitnessRow<F: PrimeField>(pub(crate) Vec<F>);
+pub struct WitnessRow<F: PrimeField>(pub Vec<F>);
 
 /// A column of witnesses of length `#constraints`
 #[derive(Debug, Clone, Default)]
-pub struct WitnessColumn<F: PrimeField>(pub(crate) Vec<F>);
+pub struct WitnessColumn<F: PrimeField>(pub Vec<F>);
 
 impl<F: PrimeField> WitnessColumn<F> {
     /// the number of variables of the multilinear polynomial that presents a

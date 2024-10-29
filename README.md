@@ -1,5 +1,21 @@
-# Hyperplonk library
-A linear-time FFT-free SNARK proof system (https://eprint.iacr.org/2022/1355.pdf).
+# Cirrus: Performant and Accountable Distributed SNARK with Linear Prover Time
+
+## Test master prover and worker prover
+
+To run the master prover and worker prover, first run the master prover:
+
+```bash
+> cargo run --bin master <path to srs>
+```
+
+The master prover will generate the srs (reference string) and store it in the file identified by `<path to srs>`.
+
+To start the worker provers, run in two separate terminals:
+
+```bash
+> cargo run --bin worker 0 <path to srs>
+> cargo run --bin worker 1 <path to srs>
+```
 
 ## Disclaimer
 
@@ -64,7 +80,9 @@ To update only a single input specify it as an argument, for example
 
     nix flake update github:oxalica/rust-overlay
 
-### Benchmarks
+### HyperPlonk Benchmarks
 
-To obtain benchmarks, run the script file `scripts/run_benchmarks.sh`. 
+HyperPlonk: A linear-time FFT-free SNARK proof system (https://eprint.iacr.org/2022/1355.pdf).
+
+To obtain benchmarks of HyperPlonk, run the script file `scripts/run_benchmarks.sh`. 
 We refer to Table 5 and Table 6 in https://eprint.iacr.org/2022/1355.pdf for an example benchmark.
