@@ -101,12 +101,8 @@ where
 
     let socket = TcpStream::connect(master_addr).unwrap();
     let mut worker_channel = WorkerProverChannelSocket { worker_id, socket };
-    let result =
-        PolyIOP::<E::ScalarField>::prove_worker(&pk_workers[worker_id], &mut worker_channel)?;
 
-    worker_channel.send(&result)?;
-
-    Ok(())
+    PolyIOP::<E::ScalarField>::prove_worker(&pk_workers[worker_id], &mut worker_channel)
 }
 
 fn _test() -> Result<(), DistributedError> {

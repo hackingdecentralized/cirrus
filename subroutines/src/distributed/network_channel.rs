@@ -1,5 +1,6 @@
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_std::{end_timer, start_timer};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -52,6 +53,7 @@ impl MasterProverChannelSocket {
 // Implement MasterProverChannel for MasterProverChannelSocket
 impl MasterProverChannel for MasterProverChannelSocket {
     fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+        let start = start_timer!(|| "MasterProverChannel::send_uniform");
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
@@ -70,6 +72,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
                 .map_err(|_| DistributedError::MasterSendError)?;
         }
 
+        end_timer!(start);
         Ok(())
     }
 
@@ -77,6 +80,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
         &mut self,
         msgs: Vec<T>,
     ) -> Result<(), DistributedError> {
+        let start = start_timer!(|| "MasterProverChannel::send_different");
         if msgs.len() != self.worker_sockets.len() {
             return Err(DistributedError::MasterSendError);
         }
@@ -100,10 +104,12 @@ impl MasterProverChannel for MasterProverChannelSocket {
                 .map_err(|_| DistributedError::MasterSendError)?;
         }
 
+        end_timer!(start);
         Ok(())
     }
 
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
+        let start = start_timer!(|| "MasterProverChannel::recv");
         let mut results = Vec::new();
 
         for worker_socket in &self.worker_sockets {
@@ -126,6 +132,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
             results.push(msg);
         }
 
+        end_timer!(start);
         Ok(results)
     }
 
@@ -137,6 +144,8 @@ impl MasterProverChannel for MasterProverChannelSocket {
 // Implement WorkerProverChannel for WorkerProverChannelSocket with send and recv
 impl WorkerProverChannel for WorkerProverChannelSocket {
     fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {
+        let start = start_timer!(|| "WorkerProverChannel::send");
+
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
@@ -158,10 +167,12 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
             .write_all(&serialized_msg)
             .map_err(|_| DistributedError::WorkerSendError)?;
 
+        end_timer!(start);
         Ok(())
     }
 
     fn recv<T: CanonicalDeserialize>(&mut self) -> Result<T, DistributedError> {
+        let start = start_timer!(|| "WorkerProverChannel::recv");
         let mut socket = self
             .socket
             .try_clone()
@@ -181,6 +192,8 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
             .map_err(|_| DistributedError::WorkerRecvError)?;
 
         let msg = T::deserialize_compressed(&buffer[..]).map_err(DistributedError::from)?;
+        
+        end_timer!(start);
         Ok(msg)
     }
 
@@ -332,8 +345,7 @@ mod tests {
 
     #[test]
     fn test_multithreaded_worker_communication() {
-        let (master_channel, worker_channels) =
-            new_master_worker_socket_channels(2, "127.0.0.1:0");
+        let (master_channel, worker_channels) = new_master_worker_socket_channels(2, "127.0.0.1:0");
 
         let worker_channels = Arc::new(Mutex::new(worker_channels));
         let master_channel = Arc::new(Mutex::new(master_channel));

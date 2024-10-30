@@ -8,7 +8,7 @@ use crate::{
     custom_gate::CustomizedGates, errors::HyperPlonkErrors, structs::HyperPlonkParams,
     witness::WitnessColumn,
 };
-use arithmetic::{evaluate_opt, transpose, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{evaluate_opt, VPAuxInfo, VirtualPolynomial};
 use ark_ec::pairing::Pairing;
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
@@ -100,9 +100,7 @@ where
     PCS: PolynomialCommitmentSchemeDistributed<E>,
 {
     pub num_var: usize,
-    pub log_num_workers: usize,
     pub points: Vec<PCS::Point>,
-    pub evals: Vec<E::ScalarField>,
 }
 
 impl<E, PCS> PcsAccumulatorMaster<E, PCS>
@@ -118,12 +116,10 @@ where
         WorkerPolynomialHandle = Arc<DenseMultilinearExtension<E::ScalarField>>,
     >,
 {
-    pub fn new(num_var: usize, log_num_workers: usize) -> Self {
+    pub fn new(num_var: usize) -> Self {
         Self {
             num_var,
-            log_num_workers,
             points: vec![],
-            evals: vec![],
         }
     }
 
@@ -132,52 +128,16 @@ where
         self.points.push(point);
     }
 
-    pub fn eval_poly_and_points(
-        &mut self,
-        master_channel: &mut impl MasterProverChannel,
-    ) -> Result<(), HyperPlonkErrors> {
-        let worker_num_vars = self.num_var - self.log_num_workers;
-        let mut worker_points = Vec::new();
-        for point in self.points.iter() {
-            let (worker_point, _) = point.split_at(worker_num_vars);
-            worker_points.push(worker_point.to_vec());
-        }
-
-        master_channel.send_uniform(&worker_points)?;
-        let evals: Vec<Vec<PCS::Evaluation>> = master_channel.recv()?;
-        let evals = transpose(evals)
-            .into_iter()
-            .zip(self.points.iter())
-            .map(|(evals, point)| {
-                let (_, master_point) = point.split_at(worker_num_vars);
-                evaluate_opt(
-                    &DenseMultilinearExtension::from_evaluations_vec(self.log_num_workers, evals),
-                    master_point,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        self.evals = evals;
-        Ok(())
-    }
-
     pub fn multi_open(
         &self,
         prover_param: impl Borrow<PCS::MasterProverParam>,
         transcript: &mut IOPTranscript<E::ScalarField>,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<PCS::BatchProof, HyperPlonkErrors> {
-        if self.points.len() != self.evals.len() {
-            return Err(HyperPlonkErrors::InvalidProver(
-                "Number of points and evals do not match".to_string(),
-            ));
-        }
-
         Ok(PCS::multi_open_master(
             prover_param,
             &self.num_var,
             self.points.as_ref(),
-            self.evals.as_ref(),
             transcript,
             master_channel,
         )?)
@@ -216,20 +176,6 @@ where
     pub fn insert_poly(&mut self, poly: &PCS::WorkerPolynomialHandle) {
         assert!(poly.num_vars == self.num_var);
         self.polynomials.push(poly.clone());
-    }
-
-    pub fn eval_poly_and_points(
-        &mut self,
-        worker_channel: &mut impl WorkerProverChannel,
-    ) -> Result<(), HyperPlonkErrors> {
-        let points: Vec<PCS::Point> = worker_channel.recv()?;
-        let evals = points
-            .iter()
-            .zip(self.polynomials.iter())
-            .map(|(point, poly)| evaluate_opt(poly, point))
-            .collect::<Vec<_>>();
-        worker_channel.send(&evals)?;
-        Ok(())
     }
 
     pub fn multi_open(

@@ -174,7 +174,6 @@ pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmen
         _master_prover_param: impl Borrow<Self::MasterProverParam>,
         _handle: &Self::MasterPolynomialHandle,
         _points: &[Self::Point],
-        _evals: &[Self::Evaluation],
         _transcript: &mut IOPTranscript<E::ScalarField>,
         _master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::BatchProof, PCSError> {

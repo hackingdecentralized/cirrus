@@ -177,7 +177,7 @@ where
         let log_num_workers = master_channel.log_num_workers();
         let ell = log2(pk.params.num_pub_input) as usize;
 
-        let mut pcs_acc = PcsAccumulatorMaster::<E, PCS>::new(num_vars, log_num_workers);
+        let mut pcs_acc = PcsAccumulatorMaster::<E, PCS>::new(num_vars);
 
         // =======================================================================
         // 1. Master prover distributes the witness polynomials to workers and
@@ -341,7 +341,6 @@ where
             pcs_acc.insert_point(zero_check_proof.point.clone());
         }
 
-        pcs_acc.eval_poly_and_points(master_channel)?;
         let batch_openings = pcs_acc.multi_open(&pk.pcs_param, &mut transcript, master_channel)?;
 
         end_timer!(step);
@@ -424,6 +423,8 @@ where
         // the master prover.
         // =======================================================================
 
+        let step = start_timer!(|| "generate pcs batch proof; worker");
+
         let prod_master = {
             let f: E::ScalarField = worker_channel.recv()?;
             Arc::new(DenseMultilinearExtension::from_evaluations_vec(
@@ -463,9 +464,6 @@ where
             pcs_acc.insert_poly(selector);
         }
 
-        // TODO delete the evaluation part.
-        // as it is done in multi open
-        pcs_acc.eval_poly_and_points(worker_channel)?;
         pcs_acc.multi_open(&pk.pcs_param, worker_channel)?;
 
         end_timer!(step);
@@ -706,10 +704,7 @@ mod tests {
 
     use ark_bls12_381::Bls12_381;
     use ark_std::{test_rng, One};
-    use subroutines::{
-        new_master_worker_channels, MultilinearKzgPCS,
-        PolynomialCommitmentScheme,
-    };
+    use subroutines::{new_master_worker_channels, MultilinearKzgPCS, PolynomialCommitmentScheme};
 
     use crate::{
         prelude::{CustomizedGates, SelectorColumn},

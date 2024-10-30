@@ -26,15 +26,8 @@ use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    borrow::Borrow,
-    end_timer, format, log2,
-    marker::PhantomData,
-    rand::Rng,
-    start_timer,
-    string::ToString,
-    sync::Arc,
-    vec::Vec,
-    One, Zero,
+    borrow::Borrow, end_timer, format, log2, marker::PhantomData, rand::Rng, start_timer,
+    string::ToString, sync::Arc, vec::Vec, One, Zero,
 };
 use std::ops::Mul;
 // use batching::{batch_verify_internal, multi_open_internal};
@@ -443,7 +436,6 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
         points: &[Self::Point],
-        _evals: &[Self::Evaluation],
         transcript: &mut IOPTranscript<E::ScalarField>,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::BatchProof, PCSError> {
@@ -487,8 +479,6 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
                 )
             })
             .collect::<Vec<_>>();
-
-        assert_eq!(&evals, _evals);
 
         let proof =
             match <PolyIOP<E::ScalarField> as SumCheckDistributed<E::ScalarField>>::prove_master(
