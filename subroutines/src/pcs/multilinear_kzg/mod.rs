@@ -12,9 +12,11 @@ pub(crate) mod util;
 
 use crate::{
     pcs::{prelude::Commitment, PCSError, PolynomialCommitmentScheme, StructuredReferenceString},
-    BatchProof, MasterProverChannel, WorkerProverChannel,
+    BatchProof, MasterProverChannel, PolyIOP, SumCheckDistributed, WorkerProverChannel,
 };
-use arithmetic::evaluate_opt;
+use arithmetic::{
+    build_eq_x_r, build_eq_x_r_vec, eq_eval, evaluate_opt, transpose, VPAuxInfo, VirtualPolynomial,
+};
 use ark_ec::{
     pairing::Pairing,
     scalar_mul::{fixed_base::FixedBase, variable_base::VariableBaseMSM},
@@ -24,8 +26,15 @@ use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    borrow::Borrow, end_timer, format, marker::PhantomData, rand::Rng, start_timer,
-    string::ToString, sync::Arc, vec, vec::Vec, One, Zero,
+    borrow::Borrow,
+    end_timer, format, log2,
+    marker::PhantomData,
+    rand::Rng,
+    start_timer,
+    string::ToString,
+    sync::Arc,
+    vec::Vec,
+    One, Zero,
 };
 use std::ops::Mul;
 // use batching::{batch_verify_internal, multi_open_internal};
@@ -429,6 +438,199 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
 
         Ok(())
     }
+
+    fn multi_open_master(
+        master_prover_param: impl Borrow<Self::MasterProverParam>,
+        handle: &Self::MasterPolynomialHandle,
+        points: &[Self::Point],
+        _evals: &[Self::Evaluation],
+        transcript: &mut IOPTranscript<E::ScalarField>,
+        master_channel: &mut impl MasterProverChannel,
+    ) -> Result<Self::BatchProof, PCSError> {
+        let timer = start_timer!(|| "multilinear KZG: multiple open; master");
+
+        let num_var = *handle;
+        let log_num_workers = master_channel.log_num_workers();
+        let worker_num_vars = num_var - log_num_workers;
+        let k = points.len();
+        let ell = log2(k) as usize;
+
+        let t: Vec<E::ScalarField> =
+            transcript.get_and_append_challenge_vectors("t".as_ref(), ell)?;
+        master_channel.send_uniform(&t)?;
+
+        let mut worker_points = Vec::new();
+        let mut master_points = Vec::new();
+        for point in points.iter() {
+            let (worker_point, master_point) = point.split_at(worker_num_vars);
+            worker_points.push(worker_point.to_vec());
+            master_points.push(master_point.to_vec());
+        }
+
+        master_channel.send_uniform(&worker_points)?;
+
+        master_channel.send_different(transpose(
+            master_points
+                .iter()
+                .map(|point| build_eq_x_r_vec(point.as_ref()))
+                .collect::<Result<Vec<_>, _>>()?,
+        ))?;
+
+        let evals: Vec<Vec<Self::Evaluation>> = master_channel.recv()?;
+        let evals = transpose(evals)
+            .into_iter()
+            .zip(master_points.iter())
+            .map(|(evals, point)| {
+                evaluate_opt(
+                    &DenseMultilinearExtension::from_evaluations_vec(log_num_workers, evals),
+                    point,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(&evals, _evals);
+
+        let proof =
+            match <PolyIOP<E::ScalarField> as SumCheckDistributed<E::ScalarField>>::prove_master(
+                &VPAuxInfo {
+                    max_degree: 2,
+                    num_variables: num_var,
+                    phantom: PhantomData,
+                },
+                // [(1, [0, k]), (1, [1, k+1]), ..., (1, [k-1, 2k-1])]
+                &(0..k)
+                    .map(|i| (E::ScalarField::one(), vec![i, i + k]))
+                    .collect::<Vec<_>>(),
+                log_num_workers,
+                transcript,
+                master_channel,
+            ) {
+                Ok(proof) => proof,
+                Err(_e) => {
+                    return Err(PCSError::InvalidProver(
+                        "SumCheckDistributed on master failed".to_string(),
+                    ))
+                },
+            };
+
+        let challenge = &proof.point;
+        let tilde_eqs_master_scalar = points
+            .iter()
+            .map(|point| eq_eval(point, challenge))
+            .collect::<Result<Vec<_>, _>>()?;
+        master_channel.send_uniform(&tilde_eqs_master_scalar)?;
+
+        let (g_prime_proof, _) = Self::open_distributed_master(
+            master_prover_param.borrow(),
+            handle,
+            challenge,
+            master_channel,
+        )?;
+
+        end_timer!(timer);
+        Ok(BatchProof {
+            sum_check_proof: proof,
+            f_i_eval_at_point_i: evals,
+            g_prime_proof,
+        })
+    }
+
+    fn multi_open_worker(
+        worker_prover_param: impl Borrow<Self::WorkerProverParam>,
+        polynomials: &[Self::WorkerPolynomialHandle],
+        worker_channel: &mut impl WorkerProverChannel,
+    ) -> Result<(), PCSError> {
+        let timer = start_timer!(|| "multilinear KZG: multiple open; worker");
+
+        let k = polynomials.len();
+        let num_vars = polynomials[0].num_vars;
+        let ell = log2(k) as usize;
+
+        let t: Vec<E::ScalarField> = worker_channel.recv()?;
+        assert_eq!(t.len(), ell);
+        let eq_t_i_list = build_eq_x_r(t.as_ref())?;
+
+        let points: Vec<Self::Point> = worker_channel.recv()?;
+        assert_eq!(points.len(), k);
+        let evals = points
+            .iter()
+            .zip(polynomials.iter())
+            .map(|(point, poly)| evaluate_opt(poly, point))
+            .collect::<Vec<_>>();
+        worker_channel.send(&evals)?;
+
+        let tilde_eqs_master_scalar: Vec<Self::Evaluation> = worker_channel.recv()?;
+        assert_eq!(tilde_eqs_master_scalar.len(), k);
+        let tilde_eqs = tilde_eqs_master_scalar
+            .iter()
+            .zip(points.iter())
+            .map(|(scalar, point)| -> Result<Self::Polynomial, PCSError> {
+                Ok(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+                    num_vars,
+                    build_eq_x_r_vec(point.as_ref())?
+                        .iter()
+                        .map(|eq| *eq * scalar)
+                        .collect::<Vec<_>>(),
+                )))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let tilde_gs = polynomials
+            .iter()
+            .zip(eq_t_i_list.iter())
+            .take(k)
+            .map(|(poly, eq_t_i)| {
+                Arc::new(DenseMultilinearExtension::from_evaluations_slice(
+                    num_vars,
+                    &*poly
+                        .evaluations
+                        .iter()
+                        .map(|eval| *eval * eq_t_i)
+                        .collect::<Vec<_>>(),
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        let sum_check_vp = VirtualPolynomial::new_from_raw(
+            VPAuxInfo {
+                max_degree: 2,
+                num_variables: num_vars,
+                phantom: PhantomData,
+            },
+            // [(1, [0, k]), (1, [1, k+1]), ..., (1, [k-1, 2k-1])]
+            (0..k)
+                .map(|i| (E::ScalarField::one(), vec![i, i + k]))
+                .collect::<Vec<_>>(),
+            tilde_gs
+                .iter()
+                .chain(tilde_eqs.iter())
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+
+        match <PolyIOP<E::ScalarField> as SumCheckDistributed<E::ScalarField>>::prove_worker(
+            &sum_check_vp,
+            worker_channel,
+        ) {
+            Ok(_) => (),
+            Err(_e) => {
+                return Err(PCSError::InvalidProver(
+                    "SumCheckDistributed on worker failed".to_string(),
+                ))
+            },
+        };
+
+        let tilde_eqs_eval_scalar: Vec<Self::Evaluation> = worker_channel.recv()?;
+        let mut g_prime = Arc::new(DenseMultilinearExtension::zero());
+        for (tilde_g, tilde_eq_eval) in tilde_gs.iter().zip(tilde_eqs_eval_scalar.iter()) {
+            *Arc::make_mut(&mut g_prime) += (*tilde_eq_eval, &**tilde_g);
+        }
+
+        Self::open_distributed_worker(worker_prover_param.borrow(), &g_prime, worker_channel)?;
+
+        end_timer!(timer);
+        Ok(())
+    }
 }
 
 /// On input a polynomial `p` and a point `point`, outputs a proof for the
@@ -574,7 +776,6 @@ mod tests {
     use std::thread::spawn;
 
     use crate::new_master_worker_channels;
-    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Bls12_381;

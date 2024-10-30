@@ -1,29 +1,22 @@
-use arithmetic::{identity_permutation, split_into_chunks, transpose, VPAuxInfo};
 use ark_bls12_381::Bls12_381;
 use ark_ec::pairing::Pairing;
-use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::SerializationError;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{end_timer, log2, start_timer, test_rng, One, Zero};
+use ark_std::{One, Zero};
 use hyperplonk::{
     custom_gate::CustomizedGates,
     errors::HyperPlonkErrors,
-    prelude::{SelectorColumn, WitnessColumn},
+    prelude::SelectorColumn,
     structs::{
-        HyperPlonkIndex, HyperPlonkParams, HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster,
-        HyperPlonkProvingKeyWorker, HyperPlonkVerifyingKey,
+        HyperPlonkIndex, HyperPlonkParams, HyperPlonkProvingKeyMaster, HyperPlonkProvingKeyWorker,
+        HyperPlonkVerifyingKey,
     },
     HyperPlonkSNARKDistributed,
 };
-use rayon::iter::IntoParallelRefIterator;
-#[cfg(feature = "parallel")]
-use rayon::iter::ParallelIterator;
+use std::fs::File;
 use std::net::TcpStream;
-use std::{fs::File, io};
 use subroutines::{DistributedError, WorkerProverChannel, WorkerProverChannelSocket};
-use subroutines::{
-    MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP, PolynomialCommitmentScheme,
-};
+use subroutines::{MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP};
 
 // Mock message struct for serialization/deserialization
 #[derive(CanonicalSerialize, CanonicalDeserialize, PartialEq, Debug, Clone)]
@@ -116,7 +109,7 @@ where
     Ok(())
 }
 
-fn test() -> Result<(), DistributedError> {
+fn _test() -> Result<(), DistributedError> {
     let master_addr = "127.0.0.1:7878"; // Address to connect to the master
     let worker_id = std::env::args()
         .nth(1)

@@ -430,11 +430,10 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
         let mut prover_state = IOPProverState::prover_init(poly)?;
 
-        for i in 0..poly.aux_info.num_variables {
+        for _ in 0..poly.aux_info.num_variables {
             let prover_msg =
                 IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
             worker_channel.send(&prover_msg)?;
-            // dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
             challenge = worker_channel.recv()?;
         }
 
@@ -465,15 +464,12 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 mod test {
 
     use crate::new_master_worker_channels;
-    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Fr;
     use ark_ff::UniformRand;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
     use ark_std::test_rng;
-    use std::net::TcpListener;
-    use std::thread;
     use std::{sync::Arc, thread::spawn};
 
     fn test_sumcheck(
@@ -567,7 +563,7 @@ mod test {
         let worker_handles = worker_channels
             .into_iter()
             .zip(distributed_poly)
-            .map(|(mut ch, poly)| {
+            .map(|(ch, poly)| {
                 (
                     ch,
                     poly.aux_info,

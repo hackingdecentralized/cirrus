@@ -342,14 +342,14 @@ where
         }
 
         pcs_acc.eval_poly_and_points(master_channel)?;
-        // TODO multiple open
+        let batch_openings = pcs_acc.multi_open(&pk.pcs_param, &mut transcript, master_channel)?;
 
         end_timer!(step);
 
         end_timer!(start);
         Ok(HyperPlonkProofDistributed {
             witness_commits,
-            evaluations: pcs_acc.evals,
+            batch_openings,
             zero_check_proof,
             perm_check_proof,
         })
@@ -463,8 +463,10 @@ where
             pcs_acc.insert_poly(selector);
         }
 
+        // TODO delete the evaluation part.
+        // as it is done in multi open
         pcs_acc.eval_poly_and_points(worker_channel)?;
-        // pcs_acc.multi_open(&pk.pcs_param, worker_channel)?;
+        pcs_acc.multi_open(&pk.pcs_param, worker_channel)?;
 
         end_timer!(step);
 
@@ -494,15 +496,15 @@ where
 
         // evaluations
 
-        let prod_master_evals = &proof.evaluations[0..4];
-        let prod_worker_evals = &proof.evaluations[4..9];
-        let frac_evals = &proof.evaluations[9..12];
-        let perm_evals = &proof.evaluations[12..12 + num_witness_columns];
-        let witness_perm_evals =
-            &proof.evaluations[12 + num_witness_columns..12 + 2 * num_witness_columns];
-        let witness_gate_evals =
-            &proof.evaluations[12 + 2 * num_witness_columns..12 + 3 * num_witness_columns];
-        let selector_evals = &proof.evaluations
+        let prod_master_evals = &proof.batch_openings.f_i_eval_at_point_i[0..4];
+        let prod_worker_evals = &proof.batch_openings.f_i_eval_at_point_i[4..9];
+        let frac_evals = &proof.batch_openings.f_i_eval_at_point_i[9..12];
+        let perm_evals = &proof.batch_openings.f_i_eval_at_point_i[12..12 + num_witness_columns];
+        let witness_perm_evals = &proof.batch_openings.f_i_eval_at_point_i
+            [12 + num_witness_columns..12 + 2 * num_witness_columns];
+        let witness_gate_evals = &proof.batch_openings.f_i_eval_at_point_i
+            [12 + 2 * num_witness_columns..12 + 3 * num_witness_columns];
+        let selector_evals = &proof.batch_openings.f_i_eval_at_point_i
             [12 + 3 * num_witness_columns..12 + 3 * num_witness_columns + num_selector_columns];
 
         // zero check
@@ -518,7 +520,7 @@ where
             &mut transcript,
         )?;
 
-        let _zero_check_point = zero_check_subclaim.point;
+        let zero_check_point = zero_check_subclaim.point;
 
         // check zero check subclaim
         let f_eval = eval_f(&vk.params.gate_func, selector_evals, witness_gate_evals)?;
@@ -589,7 +591,112 @@ where
             ));
         }
 
-        Ok(true)
+        let mut comms = vec![];
+        let mut points = vec![];
+
+        let point1 = perm_check_point.clone();
+        let point2 = [
+            &perm_check_point[0..(num_vars - log_num_workers)],
+            &[E::ScalarField::zero()],
+            &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
+        ]
+        .concat();
+        let point3 = [
+            &perm_check_point[0..(num_vars - log_num_workers)],
+            &[E::ScalarField::one()],
+            &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
+        ]
+        .concat();
+        let mut point4 = vec![E::ScalarField::one(); num_vars];
+        point4[num_vars - log_num_workers] = E::ScalarField::zero();
+
+        comms.push(proof.perm_check_proof.prod_master_comm);
+        comms.push(proof.perm_check_proof.prod_master_comm);
+        comms.push(proof.perm_check_proof.prod_master_comm);
+        comms.push(proof.perm_check_proof.prod_master_comm);
+        points.push(point1);
+        points.push(point2);
+        points.push(point3);
+        points.push(point4);
+
+        let point1 = [
+            &[E::ScalarField::zero()],
+            &vec![E::ScalarField::one(); num_vars - 1 - log_num_workers][..],
+            &[E::ScalarField::zero()],
+            &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
+        ]
+        .concat();
+
+        let point2 = [
+            &[E::ScalarField::zero()],
+            &vec![E::ScalarField::one(); num_vars - log_num_workers][..],
+            &perm_check_point[(num_vars - log_num_workers)..(num_vars - 1)],
+        ]
+        .concat();
+
+        let point4 = [
+            &[E::ScalarField::zero()],
+            &perm_check_point[0..(num_vars - log_num_workers - 1)],
+            &perm_check_point[(num_vars - log_num_workers)..],
+        ]
+        .concat();
+
+        let point5 = [
+            &[E::ScalarField::one()],
+            &perm_check_point[0..(num_vars - log_num_workers - 1)],
+            &perm_check_point[(num_vars - log_num_workers)..],
+        ]
+        .concat();
+
+        comms.push(proof.perm_check_proof.prod_worker_comm);
+        comms.push(proof.perm_check_proof.prod_worker_comm);
+        comms.push(proof.perm_check_proof.prod_worker_comm);
+        comms.push(proof.perm_check_proof.prod_worker_comm);
+        comms.push(proof.perm_check_proof.prod_worker_comm);
+
+        points.push(point1);
+        points.push(point2);
+        points.push(perm_check_point.clone());
+        points.push(point4.clone());
+        points.push(point5.clone());
+
+        comms.push(proof.perm_check_proof.frac_comm);
+        comms.push(proof.perm_check_proof.frac_comm);
+        comms.push(proof.perm_check_proof.frac_comm);
+
+        points.push(perm_check_point.clone());
+        points.push(point4);
+        points.push(point5);
+
+        for &comm in vk.perm_commitments.iter() {
+            comms.push(comm);
+            points.push(perm_check_point.clone());
+        }
+
+        for &comm in proof.witness_commits.iter() {
+            comms.push(comm);
+            points.push(perm_check_point.clone());
+        }
+
+        for &comm in proof.witness_commits.iter() {
+            comms.push(comm);
+            points.push(zero_check_point.clone());
+        }
+
+        for &comm in vk.selector_commitments.iter() {
+            comms.push(comm);
+            points.push(zero_check_point.clone());
+        }
+
+        let res = PCS::batch_verify(
+            &vk.pcs_param,
+            &comms,
+            &points,
+            &proof.batch_openings,
+            &mut transcript,
+        )?;
+
+        Ok(res)
     }
 }
 
@@ -600,7 +707,7 @@ mod tests {
     use ark_bls12_381::Bls12_381;
     use ark_std::{test_rng, One};
     use subroutines::{
-        new_master_worker_channels, new_master_worker_thread_channels, MultilinearKzgPCS,
+        new_master_worker_channels, MultilinearKzgPCS,
         PolynomialCommitmentScheme,
     };
 

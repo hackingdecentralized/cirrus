@@ -395,7 +395,7 @@ where
 mod test {
     use super::{PermutationCheck, PermutationCheckDistributed};
     use crate::{
-        new_master_worker_channels, new_master_worker_thread_channels,
+        new_master_worker_channels,
         pcs::{
             prelude::MultilinearKzgPCS, PolynomialCommitmentScheme,
             PolynomialCommitmentSchemeDistributed,

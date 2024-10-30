@@ -168,9 +168,7 @@ where
     PC: PermutationCheckDistributed<E, PCS>,
 {
     pub witness_commits: Vec<PCS::Commitment>,
-    // TODO
-    // pub batch_openings: PCS::BatchProof,
-    pub evaluations: Vec<PCS::Evaluation>,
+    pub batch_openings: PCS::BatchProof,
     pub zero_check_proof: <PC as ZeroCheck<E::ScalarField>>::ZeroCheckProof,
     pub perm_check_proof: PC::PermutationProof,
 }

@@ -165,9 +165,22 @@ where
         &self,
         prover_param: impl Borrow<PCS::MasterProverParam>,
         transcript: &mut IOPTranscript<E::ScalarField>,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<PCS::BatchProof, HyperPlonkErrors> {
-        unimplemented!()
+        if self.points.len() != self.evals.len() {
+            return Err(HyperPlonkErrors::InvalidProver(
+                "Number of points and evals do not match".to_string(),
+            ));
+        }
+
+        Ok(PCS::multi_open_master(
+            prover_param,
+            &self.num_var,
+            self.points.as_ref(),
+            self.evals.as_ref(),
+            transcript,
+            master_channel,
+        )?)
     }
 }
 
@@ -178,7 +191,6 @@ where
 {
     pub num_var: usize,
     pub polynomials: Vec<PCS::WorkerPolynomialHandle>,
-    // pub evals: Vec<E::ScalarField>,
 }
 
 impl<E, PCS> PcsAccumulatorWorker<E, PCS>
@@ -198,7 +210,6 @@ where
         Self {
             num_var,
             polynomials: vec![],
-            // evals: vec![],
         }
     }
 
@@ -224,9 +235,10 @@ where
     pub fn multi_open(
         &self,
         prover_param: impl Borrow<PCS::WorkerProverParam>,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
-        unimplemented!()
+        PCS::multi_open_worker(prover_param, &self.polynomials, worker_channel)?;
+        Ok(())
     }
 }
 

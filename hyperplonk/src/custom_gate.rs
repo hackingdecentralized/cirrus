@@ -4,7 +4,6 @@
 // You should have received a copy of the MIT License
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::cmp::max;
 
 /// Customized gate is a list of tuples of

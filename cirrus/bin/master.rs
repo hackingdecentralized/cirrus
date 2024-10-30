@@ -1,24 +1,16 @@
-use arithmetic::{identity_permutation, split_into_chunks, transpose, VPAuxInfo};
 use ark_bls12_381::Bls12_381;
 use ark_ec::pairing::Pairing;
-use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::Write;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{end_timer, log2, start_timer, test_rng, One, Zero};
+use ark_std::{test_rng, One, Zero};
 use hyperplonk::{
     custom_gate::CustomizedGates,
     errors::HyperPlonkErrors,
     prelude::{SelectorColumn, WitnessColumn},
-    structs::{
-        HyperPlonkIndex, HyperPlonkParams, HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster,
-        HyperPlonkProvingKeyWorker, HyperPlonkVerifyingKey,
-    },
+    structs::{HyperPlonkIndex, HyperPlonkParams, HyperPlonkProofDistributed},
     HyperPlonkSNARKDistributed,
 };
-use rayon::iter::IntoParallelRefIterator;
-#[cfg(feature = "parallel")]
-use rayon::iter::ParallelIterator;
-use std::{fs::File, io};
+use std::fs::File;
 use subroutines::{DistributedError, MasterProverChannel, MasterProverChannelSocket};
 use subroutines::{
     MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP, PolynomialCommitmentScheme,
@@ -127,7 +119,7 @@ where
     Ok(())
 }
 
-fn test() -> Result<(), DistributedError> {
+fn _test() -> Result<(), DistributedError> {
     let master_addr = "127.0.0.1:7878"; // Address to bind the master
     let log_num_workers = 1; // Set the number of workers as a power of two, e.g., 2^1 = 2 workers
 

@@ -230,7 +230,6 @@ pub fn new_master_worker_socket_channels(
 mod tests {
     use super::*;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-    use std::net::{TcpListener, TcpStream};
     use std::sync::{Arc, Mutex};
     use std::thread;
     // use std::time::Duration;
@@ -239,39 +238,6 @@ mod tests {
     #[derive(CanonicalSerialize, CanonicalDeserialize, PartialEq, Debug, Clone)]
     struct TestMessage {
         data: u64,
-    }
-
-    // Helper function to start a listener for the master channel and accept worker connections
-    fn setup_master_and_worker_channels(
-        num_workers: usize,
-    ) -> (MasterProverChannelSocket, Vec<WorkerProverChannelSocket>) {
-        let master_addr = "127.0.0.1:0"; // Bind to an available port
-        let listener = TcpListener::bind(master_addr).expect("Failed to bind listener");
-        let master_socket_addr = listener.local_addr().expect("Failed to get local address");
-
-        let worker_channels: Vec<WorkerProverChannelSocket> = (0..num_workers)
-            .map(|worker_id| {
-                let socket = TcpStream::connect(master_socket_addr)
-                    .expect("Failed to connect worker to master");
-                WorkerProverChannelSocket { worker_id, socket }
-            })
-            .collect();
-
-        // Accept incoming worker connections in master
-        let mut worker_sockets = Vec::new();
-        for _ in 0..num_workers {
-            let (socket, _addr) = listener
-                .accept()
-                .expect("Failed to accept worker connection");
-            worker_sockets.push(socket);
-        }
-
-        let master_channel = MasterProverChannelSocket {
-            log_num_workers: num_workers,
-            worker_sockets,
-        };
-
-        (master_channel, worker_channels)
     }
 
     #[test]
@@ -366,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_multithreaded_worker_communication() {
-        let (mut master_channel, worker_channels) =
+        let (master_channel, worker_channels) =
             new_master_worker_socket_channels(2, "127.0.0.1:0");
 
         let worker_channels = Arc::new(Mutex::new(worker_channels));
@@ -395,7 +361,7 @@ mod tests {
 
                 thread::spawn(move || {
                     let mut workers = worker_channels.lock().unwrap();
-                    let mut worker = &mut workers[worker_id];
+                    let worker = &mut workers[worker_id];
                     worker
                         .send(&message)
                         .expect("Failed to send message to master");
@@ -411,7 +377,7 @@ mod tests {
 
                 thread::spawn(move || {
                     let mut workers = worker_channels.lock().unwrap();
-                    let mut worker = &mut workers[worker_id];
+                    let worker = &mut workers[worker_id];
                     let received_msg: TestMessage = worker
                         .recv()
                         .expect("Failed to receive message from master");

@@ -169,6 +169,29 @@ pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmen
         poly: &Self::WorkerPolynomialHandle,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError>;
+
+    fn multi_open_master(
+        _master_prover_param: impl Borrow<Self::MasterProverParam>,
+        _handle: &Self::MasterPolynomialHandle,
+        _points: &[Self::Point],
+        _evals: &[Self::Evaluation],
+        _transcript: &mut IOPTranscript<E::ScalarField>,
+        _master_channel: &mut impl MasterProverChannel,
+    ) -> Result<Self::BatchProof, PCSError> {
+        // the reason we use unimplemented!() is to enable developers to implement the
+        // trait without always implementing the batching APIs.
+        unimplemented!()
+    }
+
+    fn multi_open_worker(
+        _worker_prover_param: impl Borrow<Self::WorkerProverParam>,
+        _poly: &[Self::WorkerPolynomialHandle],
+        _worker_channel: &mut impl WorkerProverChannel,
+    ) -> Result<(), PCSError> {
+        // the reason we use unimplemented!() is to enable developers to implement the
+        // trait without always implementing the batching APIs.
+        unimplemented!()
+    }
 }
 
 /// API definitions for structured reference string

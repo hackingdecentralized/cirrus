@@ -264,7 +264,7 @@ mod test {
 
     use super::{ZeroCheck, ZeroCheckDistributed};
     use crate::{
-        new_master_worker_channels, new_master_worker_thread_channels,
+        new_master_worker_channels,
         poly_iop::{errors::PolyIOPErrors, PolyIOP},
     };
     use arithmetic::VirtualPolynomial;
@@ -405,7 +405,7 @@ mod test {
             let worker_handles: Vec<_> = worker_channels
                 .into_iter()
                 .zip(distributed_poly)
-                .map(|(mut ch, poly)| {
+                .map(|(ch, poly)| {
                     (
                         ch,
                         poly.aux_info,
