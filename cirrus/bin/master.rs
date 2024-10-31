@@ -52,7 +52,7 @@ where
     let master_addr = "127.0.0.1:7878";
 
     let gate_func = CustomizedGates {
-        gates: vec![(1, Some(0), vec![0; 3]), (-1, None, vec![1])],
+        gates: vec![((false, 1), Some(0), vec![0; 3]), ((true, 1), None, vec![1])],
     };
     let params = HyperPlonkParams {
         num_constraints,

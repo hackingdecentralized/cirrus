@@ -748,7 +748,7 @@ mod tests {
 
         // q0 * w0^3 + (-1) * w1 = 0
         let gate_func = CustomizedGates {
-            gates: vec![(1, Some(0), vec![0; 3]), (-1, None, vec![1])],
+            gates: vec![((false, 1), Some(0), vec![0; 3]), ((true, 1), None, vec![1])],
         };
         let params = HyperPlonkParams {
             num_constraints,

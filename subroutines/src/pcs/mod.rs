@@ -134,8 +134,8 @@ pub trait PolynomialCommitmentScheme<E: Pairing> {
 }
 
 pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmentScheme<E> {
-    type MasterProverParam: Clone + Sync;
-    type WorkerProverParam: Clone + Sync;
+    type MasterProverParam: Clone + Sync + CanonicalSerialize + CanonicalDeserialize;
+    type WorkerProverParam: Clone + Sync + CanonicalSerialize + CanonicalDeserialize;
 
     type MasterPolynomialHandle: Clone + Debug + PartialEq + Eq;
     type WorkerPolynomialHandle: Clone + Debug + PartialEq + Eq;

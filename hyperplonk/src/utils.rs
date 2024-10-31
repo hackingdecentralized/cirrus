@@ -308,9 +308,9 @@ pub(crate) fn build_f<F: PrimeField>(
 
     let mut res = VirtualPolynomial::<F>::new(num_vars);
 
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let coeff_fr = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let coeff_fr = if *sign {
+            -F::from(*coeff as u64)
         } else {
             F::from(*coeff as u64)
         };
@@ -333,9 +333,9 @@ pub(crate) fn eval_f<F: PrimeField>(
     witness_evals: &[F],
 ) -> Result<F, HyperPlonkErrors> {
     let mut res = F::zero();
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let mut cur_value = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let mut cur_value = if *sign {
+            -F::from(*coeff as u64)
         } else {
             F::from(*coeff as u64)
         };
@@ -354,11 +354,11 @@ pub(crate) fn eval_f<F: PrimeField>(
 pub(crate) fn build_f_product<F: PrimeField>(gates: &CustomizedGates) -> Vec<(F, Vec<usize>)> {
     let mut res = Vec::new();
     let num_witness_columns = gates.num_witness_columns();
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let coeff_fr = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let coeff_fr = if *sign {
+            -F::from(*coeff)
         } else {
-            F::from(*coeff as u64)
+            F::from(*coeff)
         };
         let mut products = witnesses.clone();
         if let Some(s) = *selector {
@@ -563,7 +563,7 @@ mod test {
         //     (-1,    None,           vec![id_W2])
         // ]
         let gates = CustomizedGates {
-            gates: vec![(1, Some(0), vec![0, 0, 0, 0, 0]), (-1, None, vec![1])],
+            gates: vec![((false, 1), Some(0), vec![0, 0, 0, 0, 0]), ((true, 1), None, vec![1])],
         };
         let f = build_f(&gates, num_vars, &[ql.clone()], &[w1.clone(), w2.clone()])?;
 
