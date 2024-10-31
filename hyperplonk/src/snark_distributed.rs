@@ -481,6 +481,8 @@ where
         pub_input: &[<E as Pairing>::ScalarField],
         proof: &Self::Proof,
     ) -> Result<bool, HyperPlonkErrors> {
+        let start = start_timer!(|| "Cirrus; verify");
+
         let num_vars = vk.params.num_variables();
         let log_num_workers = proof.perm_check_proof.log_num_workers;
         let num_pub_input = vk.params.num_pub_input;
@@ -694,6 +696,7 @@ where
             &mut transcript,
         )?;
 
+        end_timer!(start);
         Ok(res)
     }
 }

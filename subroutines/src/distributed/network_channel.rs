@@ -192,7 +192,7 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
             .map_err(|_| DistributedError::WorkerRecvError)?;
 
         let msg = T::deserialize_compressed(&buffer[..]).map_err(DistributedError::from)?;
-        
+
         end_timer!(start);
         Ok(msg)
     }
