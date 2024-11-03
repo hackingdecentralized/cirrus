@@ -1,5 +1,7 @@
-use super::{network_channel, thread_channel};
-use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
+use super::{
+    network_channel, prelude::DistributedError, thread_channel, MasterProverChannel,
+    WorkerProverChannel,
+};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub enum MasterProverChannelEnum {
@@ -7,7 +9,8 @@ pub enum MasterProverChannelEnum {
     Socket(network_channel::MasterProverChannelSocket),
 }
 
-// Enum to encapsulate both thread and socket implementations for WorkerProverChannel
+// Enum to encapsulate both thread and socket implementations for
+// WorkerProverChannel
 pub enum WorkerProverChannelEnum {
     Thread(thread_channel::WorkerProverChannelThread),
     Socket(network_channel::WorkerProverChannelSocket),

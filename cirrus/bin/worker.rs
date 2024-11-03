@@ -2,14 +2,10 @@ use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
 use hyperplonk::{
-    errors::HyperPlonkErrors,
-    structs::HyperPlonkProvingKeyWorker,
-    HyperPlonkSNARKDistributed,
+    errors::HyperPlonkErrors, structs::HyperPlonkProvingKeyWorker, HyperPlonkSNARKDistributed,
 };
 use std::{fs::File, path::PathBuf};
-use subroutines::{
-    MultilinearKzgPCS, PolyIOP, WorkerProverChannelSocket,
-};
+use subroutines::{MultilinearKzgPCS, PolyIOP, WorkerProverChannelSocket};
 
 type E = ark_bls12_381::Bls12_381;
 type Fr = <E as Pairing>::ScalarField;

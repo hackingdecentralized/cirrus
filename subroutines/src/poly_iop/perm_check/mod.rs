@@ -146,8 +146,8 @@ where
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors>;
 
     /// Worker prover protocol of the distributed permutation check. The worker
-    /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ..., gk),
-    /// (id1, ..., idk), and (perm1, ..., permk).
+    /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ...,
+    /// gk), (id1, ..., idk), and (perm1, ..., permk).
     ///
     /// Outputs:
     /// - the prod_worker polynomial
@@ -497,7 +497,8 @@ mod test {
         let (mut master_channel, worker_channels) =
             new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
-        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) =
+        // new_master_worker_thread_channels(log_num_workers);
         let mut transcript =
             <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;

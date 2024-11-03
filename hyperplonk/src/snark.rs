@@ -427,8 +427,7 @@ where
         let pi_eval = proof.batch_openings.f_i_eval_at_point_i.last().unwrap();
 
         // =======================================================================
-        // 1. Verify zero_check_proof on
-        //     `f(q_0(x),...q_l(x), w_0(x),...w_d(x))`
+        // 1. Verify zero_check_proof on `f(q_0(x),...q_l(x), w_0(x),...w_d(x))`
         //
         // where `f` is the constraint polynomial i.e.,
         //

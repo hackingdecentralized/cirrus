@@ -182,8 +182,8 @@ where
         let mut pcs_acc = PcsAccumulatorMaster::<E, PCS>::new(num_vars);
 
         // =======================================================================
-        // 1. Master prover distributes the witness polynomials to workers and
-        //    commits to them
+        // 1. Master prover distributes the witness polynomials to workers and commits
+        //    to them
         // =======================================================================
         let step = start_timer!(|| "distribute and commit witnesses; master");
 
@@ -211,8 +211,8 @@ where
         end_timer!(step);
 
         // =======================================================================
-        // 2. All provers run distributed zero check on
-        //          f(q_0(x),...q_l(x), w_0(x),...w_d(x))
+        // 2. All provers run distributed zero check on f(q_0(x),...q_l(x),
+        //    w_0(x),...w_d(x))
         // where f is the gate function
         // =======================================================================
 
@@ -384,8 +384,8 @@ where
         end_timer!(step);
 
         // =======================================================================
-        // 2. Worker prover runs distributed zero check on
-        //          f(q_0(x),...q_l(x), w_0(x),...w_d(x))
+        // 2. Worker prover runs distributed zero check on f(q_0(x),...q_l(x),
+        //    w_0(x),...w_d(x))
         // where f is the gate function
         // =======================================================================
         let step = start_timer!(|| "Distributed zero check on f; worker");
@@ -799,7 +799,8 @@ mod tests {
             selectors: vec![q],
         };
 
-        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) =
+        // new_master_worker_thread_channels(log_num_workers);
         let (mut master_channel, worker_channels) =
             new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 

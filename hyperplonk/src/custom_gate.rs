@@ -16,8 +16,8 @@ use ark_std::cmp::max;
 ///     q_L(X) * W_1(X)^5 - W_2(X) = 0
 /// is represented as
 /// vec![
-///     ((false, 1),    Some(id_qL),    vec![id_W1, id_W1, id_W1, id_W1, id_W1]),
-///     ((true, 1),    None,           vec![id_W2])
+///     ((false, 1),    Some(id_qL),    vec![id_W1, id_W1, id_W1, id_W1,
+/// id_W1]),     ((true, 1),    None,           vec![id_W2])
 /// ]
 ///
 /// CustomizedGates {

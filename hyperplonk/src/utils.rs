@@ -472,10 +472,12 @@ pub(crate) fn eval_perm_gate<F: PrimeField>(
 // Q(x) := alpha1 * prod_master(x) - alpha1 * p1_master(x) * p2_master(x)
 //       + alpha0 * prod_worker(x) - alpha0 * p1_worker(x) * p2_worker(x)
 //       + frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
-// where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
-//       p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
-//       p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 0)
-//       p2_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
+// where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 *
+// prod_master(x_2..t, 0, x_t+1..n)       p2_master(x) = (1-x1) *
+// prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
+//       p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} *
+// prod_worker(x_1..t, x_{t+2}..n, 0)       p2_worker(x) = (1-x_{t+1}) *
+// frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
 //       gi(x) = (wi(x) + beta * perms_i(x) + gamma)
 //       fi(x) = (wi(x) + beta * s_id_i(x) + gamma)
 //       t = log2(num_workers)

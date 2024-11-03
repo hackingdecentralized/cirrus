@@ -39,8 +39,7 @@ pub trait WorkerProverChannel {
 mod test {
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
-    use ark_serialize::SerializationError;
-    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
     use ark_std::UniformRand;
 
     #[test]

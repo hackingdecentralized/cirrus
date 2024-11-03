@@ -298,11 +298,11 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         //    their virtual polynomial aux info.
         // 2. Master Prover checks the aux info matches and sends challenges to the
         //    workers sequentially, and workers return the prover messages. Master
-        //    prover aggregates the worker prover messages to form the whole proof
-        //    of the first phase.
+        //    prover aggregates the worker prover messages to form the whole proof of
+        //    the first phase.
         // 3. At the last round, Master Prover sends the final challenge for worker
-        //    provers and worker provers send_uniform the evaluation of each mle at challenge
-        //    point to the master prover.
+        //    provers and worker provers send_uniform the evaluation of each mle at
+        //    challenge point to the master prover.
 
         let phase1_timer = start_timer!(|| "phase1; master");
         master_channel.send_uniform(b"sum check starting signal")?;

@@ -1,10 +1,13 @@
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{end_timer, start_timer};
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+};
 
-// Structs for the Master and Worker channels using persistent socket connections
+// Structs for the Master and Worker channels using persistent socket
+// connections
 pub struct MasterProverChannelSocket {
     pub log_num_workers: usize,
     pub worker_sockets: Vec<TcpStream>, // Stores accepted worker connections
@@ -16,7 +19,8 @@ pub struct WorkerProverChannelSocket {
 }
 
 impl MasterProverChannelSocket {
-    /// Creates a new MasterProverChannelSocket and connects to the specified number of workers.
+    /// Creates a new MasterProverChannelSocket and connects to the specified
+    /// number of workers.
     pub fn new(log_num_workers: usize) -> Self {
         MasterProverChannelSocket {
             log_num_workers,
@@ -24,7 +28,8 @@ impl MasterProverChannelSocket {
         }
     }
 
-    /// Accepts connections from workers and populates the worker_sockets vector.
+    /// Accepts connections from workers and populates the worker_sockets
+    /// vector.
     pub fn connect_workers(&mut self, master_addr: &str) -> Result<(), DistributedError> {
         let listener =
             TcpListener::bind(master_addr).map_err(|_| DistributedError::MasterListenError)?;
@@ -42,13 +47,6 @@ impl MasterProverChannelSocket {
         Ok(())
     }
 }
-
-// pub fn new_master_channel(
-//     log_num_workers: usize,
-//     master_addr: &str
-// ) -> MasterProverChannelSocket {
-
-// }
 
 // Implement MasterProverChannel for MasterProverChannelSocket
 impl MasterProverChannel for MasterProverChannelSocket {
@@ -142,7 +140,8 @@ impl MasterProverChannel for MasterProverChannelSocket {
 }
 
 impl WorkerProverChannelSocket {
-    /// Creates a new WorkerProverChannelSocket and connects to the master at the specified address.
+    /// Creates a new WorkerProverChannelSocket and connects to the master at
+    /// the specified address.
     pub fn bind(master_addr: &str, worker_id: usize) -> Result<Self, DistributedError> {
         let socket =
             TcpStream::connect(master_addr).map_err(|_| DistributedError::WorkerConnectError)?;
@@ -150,7 +149,8 @@ impl WorkerProverChannelSocket {
     }
 }
 
-// Implement WorkerProverChannel for WorkerProverChannelSocket with send and recv
+// Implement WorkerProverChannel for WorkerProverChannelSocket with send and
+// recv
 impl WorkerProverChannel for WorkerProverChannelSocket {
     fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {
         let start = start_timer!(|| "WorkerProverChannel::send");
@@ -211,7 +211,8 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
     }
 }
 
-// Function to initialize Master and Worker channels with Master as a listening server
+// Function to initialize Master and Worker channels with Master as a listening
+// server
 pub fn new_master_worker_socket_channels(
     log_num_workers: usize,
     master_addr: &str,
@@ -252,8 +253,10 @@ pub fn new_master_worker_socket_channels(
 mod tests {
     use super::*;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
+    use std::{
+        sync::{Arc, Mutex},
+        thread,
+    };
     // use std::time::Duration;
 
     // Mock message struct for serialization/deserialization
