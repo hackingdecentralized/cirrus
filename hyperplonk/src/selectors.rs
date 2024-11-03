@@ -7,6 +7,7 @@
 use crate::{build_mle, errors::HyperPlonkErrors};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::log2;
 use std::sync::Arc;
 
@@ -15,7 +16,7 @@ use std::sync::Arc;
 pub struct SelectorRow<F: PrimeField>(pub Vec<F>);
 
 /// A column of selectors of length `#constraints`
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SelectorColumn<F: PrimeField>(pub Vec<F>);
 
 impl<F: PrimeField> SelectorColumn<F> {

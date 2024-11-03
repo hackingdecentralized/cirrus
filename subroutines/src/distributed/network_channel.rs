@@ -141,6 +141,15 @@ impl MasterProverChannel for MasterProverChannelSocket {
     }
 }
 
+impl WorkerProverChannelSocket {
+    /// Creates a new WorkerProverChannelSocket and connects to the master at the specified address.
+    pub fn bind(master_addr: &str, worker_id: usize) -> Result<Self, DistributedError> {
+        let socket =
+            TcpStream::connect(master_addr).map_err(|_| DistributedError::WorkerConnectError)?;
+        Ok(WorkerProverChannelSocket { worker_id, socket })
+    }
+}
+
 // Implement WorkerProverChannel for WorkerProverChannelSocket with send and recv
 impl WorkerProverChannel for WorkerProverChannelSocket {
     fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {

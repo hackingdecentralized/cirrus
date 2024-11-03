@@ -100,7 +100,7 @@ impl HyperPlonkParams {
 ///   - HyperPlonk parameters
 ///   - the wire permutation
 ///   - the selector vectors
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkIndex<F: PrimeField> {
     pub params: HyperPlonkParams,
     pub permutation: Vec<F>,
@@ -180,6 +180,7 @@ where
     E: Pairing,
     PCS: PolynomialCommitmentSchemeDistributed<E>,
 {
+    pub log_num_workers: usize,
     pub params: HyperPlonkParams,
     pub selector_commitments: Vec<PCS::Commitment>,
     pub permutation_commitments: Vec<PCS::Commitment>,

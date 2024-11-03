@@ -6,6 +6,7 @@
 
 use arithmetic::identity_permutation;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{log2, test_rng};
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     witness::WitnessColumn,
 };
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct MockCircuit<F: PrimeField> {
     pub public_inputs: Vec<F>,
     pub witnesses: Vec<WitnessColumn<F>>,

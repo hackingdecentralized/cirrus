@@ -649,7 +649,10 @@ mod tests {
         // 2 variables for MLE,
         // 4 wires,
         let gates = CustomizedGates {
-            gates: vec![((false, 1), Some(0), vec![0, 0, 0, 0, 0]), ((true, 1), None, vec![1])],
+            gates: vec![
+                ((false, 1), Some(0), vec![0, 0, 0, 0, 0]),
+                ((true, 1), None, vec![1]),
+            ],
         };
         test_hyperplonk_helper::<Bls12_381>(gates)
     }

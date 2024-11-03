@@ -51,7 +51,7 @@ where
 
     fn preprocess(
         index: &Self::Index,
-        log_num_worker: usize,
+        log_num_workers: usize,
         pcs_srs: &PCS::SRS,
     ) -> Result<
         (
@@ -81,7 +81,7 @@ where
 
         let permutation_oracles_distributed = permutation_oracles
             .par_iter()
-            .map(|perm| split_into_chunks(perm, log_num_worker))
+            .map(|perm| split_into_chunks(perm, log_num_workers))
             .collect::<Vec<_>>();
         let permutation_oracles_distributed = transpose(permutation_oracles_distributed);
 
@@ -98,7 +98,7 @@ where
 
         let selector_oracles_distributed = selector_oracles
             .par_iter()
-            .map(|selector| split_into_chunks(selector, log_num_worker))
+            .map(|selector| split_into_chunks(selector, log_num_workers))
             .collect::<Vec<_>>();
         let selector_oracles_distributed = transpose(selector_oracles_distributed);
 
@@ -113,15 +113,16 @@ where
             .collect::<Vec<_>>();
         let identity_oracles_distributed = identity_oracles
             .par_iter()
-            .map(|identity| split_into_chunks(identity, log_num_worker))
+            .map(|identity| split_into_chunks(identity, log_num_workers))
             .collect::<Vec<_>>();
         let identity_oracles_distributed = transpose(identity_oracles_distributed);
 
         let (pcs_param_master, pcs_param_worker) =
-            PCS::prover_param_distributed(pcs_prover_param, log_num_worker)?;
+            PCS::prover_param_distributed(pcs_prover_param, log_num_workers)?;
         Ok((
             (
                 HyperPlonkProvingKeyMaster {
+                    log_num_workers,
                     params: index.params.clone(),
                     selector_commitments: selector_commitments.clone(),
                     permutation_commitments: perm_comms.clone(),
@@ -171,8 +172,9 @@ where
         prover_sanity_check(&pk.params, pub_input, witnesses)?;
         let num_vars = pk.params.num_variables();
         assert!(
-            log_num_workers == master_channel.log_num_workers(),
-            "log_num_workers mismatch with the master channel"
+            log_num_workers == master_channel.log_num_workers()
+                && pk.log_num_workers == log_num_workers,
+            "log_num_workers mismatch with the master channel and proving key"
         );
         let log_num_workers = master_channel.log_num_workers();
         let ell = log2(pk.params.num_pub_input) as usize;
@@ -748,7 +750,10 @@ mod tests {
 
         // q0 * w0^3 + (-1) * w1 = 0
         let gate_func = CustomizedGates {
-            gates: vec![((false, 1), Some(0), vec![0; 3]), ((true, 1), None, vec![1])],
+            gates: vec![
+                ((false, 1), Some(0), vec![0; 3]),
+                ((true, 1), None, vec![1]),
+            ],
         };
         let params = HyperPlonkParams {
             num_constraints,

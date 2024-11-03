@@ -563,7 +563,10 @@ mod test {
         //     (-1,    None,           vec![id_W2])
         // ]
         let gates = CustomizedGates {
-            gates: vec![((false, 1), Some(0), vec![0, 0, 0, 0, 0]), ((true, 1), None, vec![1])],
+            gates: vec![
+                ((false, 1), Some(0), vec![0, 0, 0, 0, 0]),
+                ((true, 1), None, vec![1]),
+            ],
         };
         let f = build_f(&gates, num_vars, &[ql.clone()], &[w1.clone(), w2.clone()])?;
 

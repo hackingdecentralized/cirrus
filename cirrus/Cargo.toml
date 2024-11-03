@@ -19,6 +19,7 @@ util = { path = "../util" }
 ark-bls12-381 = { version = "0.4.0", default-features = false, features = [ "curve" ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+clap = { version = "4.5.20", features = ["derive"] }
 
 [[bin]]
 name = "master"
@@ -27,6 +28,10 @@ path = "bin/master.rs"
 [[bin]]
 name = "worker"
 path = "bin/worker.rs"
+
+[[bin]]
+name = "setup"
+path = "bin/setup.rs"
 
 # Benchmarks
 [[bench]]
