@@ -19,10 +19,13 @@ use crate::{
     poly_iop::{prelude::SumCheck, PolyIOP},
     IOPProof,
 };
-use arithmetic::{build_eq_x_r_vec, DenseMultilinearExtension, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{
+    build_eq_x_r_vec, start_timer_with_timestamp, DenseMultilinearExtension, VPAuxInfo,
+    VirtualPolynomial,
+};
 use ark_ec::{pairing::Pairing, scalar_mul::variable_base::VariableBaseMSM, CurveGroup};
 
-use ark_std::{end_timer, log2, start_timer, One, Zero};
+use ark_std::{end_timer, log2, One, Zero};
 use std::{collections::BTreeMap, iter, marker::PhantomData, ops::Deref, sync::Arc};
 use transcript::IOPTranscript;
 
@@ -64,7 +67,7 @@ where
         Evaluation = E::ScalarField,
     >,
 {
-    let open_timer = start_timer!(|| format!("multi open {} points", points.len()));
+    let open_timer = start_timer_with_timestamp!(format!("multi open {} points", points.len()));
 
     // TODO: sanity checks
     let num_var = polynomials[0].num_vars;
@@ -78,7 +81,8 @@ where
     let eq_t_i_list = build_eq_x_r_vec(t.as_ref())?;
 
     // \tilde g_i(b) = eq(t, i) * f_i(b)
-    let timer = start_timer!(|| format!("compute tilde g for {} points", points.len()));
+    let timer =
+        start_timer_with_timestamp!(format!("compute tilde g for {} points", points.len()));
     // combine the polynomials that have same opening point first to reduce the
     // cost of sum check later.
     let point_indices = points
@@ -109,7 +113,8 @@ where
         );
     end_timer!(timer);
 
-    let timer = start_timer!(|| format!("compute tilde eq for {} points", points.len()));
+    let timer =
+        start_timer_with_timestamp!(format!("compute tilde eq for {} points", points.len()));
     let tilde_eqs: Vec<_> = deduped_points
         .iter()
         .map(|point| {
@@ -122,9 +127,9 @@ where
     end_timer!(timer);
 
     // built the virtual polynomial for SumCheck
-    let timer = start_timer!(|| format!("sum check prove of {} variables", num_var));
+    let timer = start_timer_with_timestamp!(format!("sum check prove of {} variables", num_var));
 
-    let step = start_timer!(|| "add mle");
+    let step = start_timer_with_timestamp!("add mle");
     let mut sum_check_vp = VirtualPolynomial::new(num_var);
     for (merged_tilde_g, tilde_eq) in merged_tilde_gs.iter().zip(tilde_eqs.into_iter()) {
         sum_check_vp.add_mle_list([merged_tilde_g.clone(), tilde_eq], E::ScalarField::one())?;
@@ -151,7 +156,7 @@ where
 
     // build g'(X) = \sum_i=1..k \tilde eq_i(a2) * \tilde g_i(X) where (a2) is the
     // sumcheck's point \tilde eq_i(a2) = eq(a2, point_i)
-    let step = start_timer!(|| "evaluate at a2");
+    let step = start_timer_with_timestamp!("evaluate at a2");
     let mut g_prime = Arc::new(DenseMultilinearExtension::zero());
     for (merged_tilde_g, point) in merged_tilde_gs.iter().zip(deduped_points.iter()) {
         let eq_i_a2 = eq_eval(a2, point)?;
@@ -159,12 +164,12 @@ where
     }
     end_timer!(step);
 
-    let step = start_timer!(|| "pcs open");
+    let step = start_timer_with_timestamp!("pcs open");
     let (g_prime_proof, _g_prime_eval) = PCS::open(prover_param, &g_prime, a2.to_vec().as_ref())?;
     // assert_eq!(g_prime_eval, tilde_g_eval);
     end_timer!(step);
 
-    let step = start_timer!(|| "evaluate fi(pi)");
+    let step = start_timer_with_timestamp!("evaluate fi(pi)");
     end_timer!(step);
     end_timer!(open_timer);
 
@@ -197,7 +202,7 @@ where
         Commitment = Commitment<E>,
     >,
 {
-    let open_timer = start_timer!(|| "batch verification");
+    let open_timer = start_timer_with_timestamp!("batch verification");
 
     // TODO: sanity checks
 
@@ -212,7 +217,7 @@ where
     let a2 = &proof.sum_check_proof.point[..num_var];
 
     // build g' commitment
-    let step = start_timer!(|| "build homomorphic commitment");
+    let step = start_timer_with_timestamp!("build homomorphic commitment");
     let eq_t_list = build_eq_x_r_vec(t.as_ref())?;
 
     let mut scalars = vec![];

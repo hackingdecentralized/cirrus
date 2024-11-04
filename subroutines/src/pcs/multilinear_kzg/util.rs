@@ -5,9 +5,10 @@
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
 //! Useful utilities for KZG PCS
+use arithmetic::start_timer_with_timestamp;
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer, vec::Vec};
+use ark_std::{end_timer, vec::Vec};
 
 use crate::PCSError;
 
@@ -15,7 +16,7 @@ use crate::PCSError;
 /// eq(a,b) is takes extensions of a,b in {0,1}^num_vars such that if a and b in
 /// {0,1}^num_vars are equal then this polynomial evaluates to 1.
 pub(crate) fn eq_extension<F: PrimeField>(t: &[F]) -> Vec<DenseMultilinearExtension<F>> {
-    let start = start_timer!(|| "eq extension");
+    let start = start_timer_with_timestamp!("eq extension");
 
     let dim = t.len();
     let mut result = Vec::new();
@@ -40,7 +41,7 @@ pub(crate) fn eq_eval<F: PrimeField>(x: &[F], y: &[F]) -> Result<F, PCSError> {
             "x and y have different length".to_string(),
         ));
     }
-    let start = start_timer!(|| "eq_eval");
+    let start = start_timer_with_timestamp!("eq_eval");
     let mut res = F::one();
     for (&xi, &yi) in x.iter().zip(y.iter()) {
         let xi_yi = xi * yi;

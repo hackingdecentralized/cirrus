@@ -12,10 +12,11 @@ use crate::{
     poly_iop::{errors::PolyIOPErrors, prelude::ProductCheck, PolyIOP},
     MasterProverChannel, MultilinearProverParam, WorkerProverChannel,
 };
+use arithmetic::start_timer_with_timestamp;
 use ark_ec::pairing::Pairing;
 use ark_ff::One;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::sync::Arc;
 use transcript::IOPTranscript;
 use util::computer_nums_and_denoms_with_ids;
@@ -197,7 +198,7 @@ where
         ),
         PolyIOPErrors,
     > {
-        let start = start_timer!(|| "Permutation check prove");
+        let start = start_timer_with_timestamp!("Permutation check prove");
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
         }
@@ -242,7 +243,7 @@ where
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check verify");
+        let start = start_timer_with_timestamp!("Permutation check verify");
 
         let beta = transcript.get_and_append_challenge(b"beta")?;
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
@@ -281,7 +282,7 @@ where
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check prove master");
+        let start = start_timer_with_timestamp!("Permutation check prove master");
         let log_num_workers = master_channel.log_num_workers();
 
         if num_vars < log_num_workers {
@@ -315,7 +316,10 @@ where
         perms: &[Self::MultilinearExtension],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check prove worker");
+        let start = start_timer_with_timestamp!(format!(
+            "Permutation check prove; worker_id {}",
+            worker_channel.worker_id()
+        ));
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
         }
@@ -369,7 +373,7 @@ where
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check verify");
+        let start = start_timer_with_timestamp!("Permutation check verify");
 
         let beta = transcript.get_and_append_challenge(b"beta")?;
         let gamma = transcript.get_and_append_challenge(b"gamma")?;

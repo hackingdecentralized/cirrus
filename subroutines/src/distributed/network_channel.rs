@@ -1,6 +1,7 @@
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
+use arithmetic::start_timer_with_timestamp;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
@@ -57,7 +58,7 @@ impl MasterProverChannelSocket {
                 return Err(DistributedError::WorkerIdConflict(worker_id));
             }
 
-            println!("Accepted connection from worker {} at {}", worker_id, addr);
+            println!("Accepted connection from worker_id {} at {}", worker_id, addr);
 
             socket_storage.push(socket);
             permutation[worker_id] = i;
@@ -85,7 +86,7 @@ impl MasterProverChannelSocket {
 // Implement MasterProverChannel for MasterProverChannelSocket
 impl MasterProverChannel for MasterProverChannelSocket {
     fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
-        let start = start_timer!(|| "MasterProverChannel::send_uniform");
+        let start = start_timer_with_timestamp!("MasterProverChannel::send_uniform");
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
@@ -127,7 +128,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
         &mut self,
         msgs: Vec<T>,
     ) -> Result<(), DistributedError> {
-        let start = start_timer!(|| "MasterProverChannel::send_different");
+        let start = start_timer_with_timestamp!("MasterProverChannel::send_different");
         if msgs.len() != self.worker_sockets.len() {
             return Err(DistributedError::MasterSendError);
         }
@@ -178,7 +179,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
     }
 
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
-        let start = start_timer!(|| "MasterProverChannel::recv");
+        let start = start_timer_with_timestamp!("MasterProverChannel::recv");
 
         #[cfg(feature = "parallel")]
         let results = rayon::ThreadPoolBuilder::default()
@@ -269,7 +270,10 @@ impl WorkerProverChannelSocket {
 // recv
 impl WorkerProverChannel for WorkerProverChannelSocket {
     fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {
-        let start = start_timer!(|| "WorkerProverChannel::send");
+        let start = start_timer_with_timestamp!(format!(
+            "WorkerProverChannel::send; worker_id {}",
+            self.worker_id
+        ));
 
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
@@ -292,7 +296,10 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
     }
 
     fn recv<T: CanonicalDeserialize>(&mut self) -> Result<T, DistributedError> {
-        let start = start_timer!(|| "WorkerProverChannel::recv");
+        let start = start_timer_with_timestamp!(format!(
+            "WorkerProverChannel::recv; worker_id {}",
+            self.worker_id
+        ));
         let mut socket = self
             .socket
             .try_clone()

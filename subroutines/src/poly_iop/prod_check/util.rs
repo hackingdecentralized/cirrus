@@ -7,10 +7,10 @@
 //! This module implements useful functions for the product check protocol.
 
 use crate::poly_iop::{errors::PolyIOPErrors, structs::IOPProof, zero_check::ZeroCheck, PolyIOP};
-use arithmetic::{get_index, VirtualPolynomial};
+use arithmetic::{get_index, start_timer_with_timestamp, VirtualPolynomial};
 use ark_ff::{batch_inversion, PrimeField};
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::sync::Arc;
 use transcript::IOPTranscript;
 
@@ -23,7 +23,7 @@ pub(super) fn compute_frac_poly<F: PrimeField>(
     fxs: &[Arc<DenseMultilinearExtension<F>>],
     gxs: &[Arc<DenseMultilinearExtension<F>>],
 ) -> Result<Arc<DenseMultilinearExtension<F>>, PolyIOPErrors> {
-    let start = start_timer!(|| "compute frac(x)");
+    let start = start_timer_with_timestamp!("compute frac(x)");
 
     let mut f_evals = vec![F::one(); 1 << fxs[0].num_vars];
     for fx in fxs.iter() {
@@ -65,7 +65,7 @@ pub(super) fn compute_frac_poly<F: PrimeField>(
 pub(super) fn compute_product_poly<F: PrimeField>(
     frac_poly: &Arc<DenseMultilinearExtension<F>>,
 ) -> Result<Arc<DenseMultilinearExtension<F>>, PolyIOPErrors> {
-    let start = start_timer!(|| "compute evaluations of prod polynomial");
+    let start = start_timer_with_timestamp!("compute evaluations of prod polynomial");
     let num_vars = frac_poly.num_vars;
     let frac_evals = &frac_poly.evaluations;
 
@@ -126,7 +126,7 @@ pub(super) fn prove_zero_check<F: PrimeField>(
     alpha: &F,
     transcript: &mut IOPTranscript<F>,
 ) -> Result<(IOPProof<F>, VirtualPolynomial<F>), PolyIOPErrors> {
-    let start = start_timer!(|| "zerocheck in product check");
+    let start = start_timer_with_timestamp!("zerocheck in product check");
     let num_vars = frac_poly.num_vars;
 
     // compute p1(x) = (1-x1) * frac(x2, ..., xn, 0) + x1 * prod(x2, ..., xn, 0)

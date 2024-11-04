@@ -9,6 +9,22 @@ mod multilinear_polynomial;
 mod univariate_polynomial;
 mod util;
 mod virtual_polynomial;
+mod timer {
+    #[macro_export]
+    macro_rules! start_timer_with_timestamp {
+        ($msg:expr) => {{
+            use ark_std::start_timer;
+            use std::time::{SystemTime, UNIX_EPOCH};
+
+            let _timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            let step = start_timer!(|| format!("{}; timestamp: {}", $msg, _timestamp));
+            step
+        }};
+    }
+}
 
 pub use errors::ArithErrors;
 pub use multilinear_polynomial::{

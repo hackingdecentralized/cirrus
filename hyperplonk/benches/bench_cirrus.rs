@@ -24,6 +24,18 @@ fn main() -> Result<(), HyperPlonkErrors> {
 fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), HyperPlonkErrors> {
     let log_num_workers = 1;
 
+    // 10                      101.615046ms
+    // 12                      175.623884ms
+    // 14                      417.227933ms
+    // 16                      1.501711079s
+    // 18                      5.236924166s
+    // 20                      17.781407801s      51s    1->  num_thread=4   4->8
+    // round1: 2^20    -> 2^(20 - 3)
+    //
+    // round15: 2^(20 - 3 - 15)
+    // 22                      65.105407385s
+    // 24                      261.2209262s
+
     let start = Instant::now();
 
     let gate = CustomizedGates::vanilla_plonk_gate();

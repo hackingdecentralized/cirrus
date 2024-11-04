@@ -16,10 +16,10 @@ use crate::{
     },
     MasterProverChannel, WorkerProverChannel,
 };
-use arithmetic::{build_eq_x_r, eq_eval};
+use arithmetic::{build_eq_x_r, eq_eval, start_timer_with_timestamp};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use transcript::IOPTranscript;
 
 /// A zero check IOP subclaim for `f(x)` consists of the following:
@@ -100,7 +100,7 @@ impl<F: PrimeField> ZeroCheck<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors> {
-        let start = start_timer!(|| "zero check prove");
+        let start = start_timer_with_timestamp!("zero check prove");
 
         let length = poly.aux_info.num_variables;
         let r = transcript.get_and_append_challenge_vectors(b"0check r", length)?;
@@ -116,7 +116,7 @@ impl<F: PrimeField> ZeroCheck<F> for PolyIOP<F> {
         fx_aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ZeroCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "zero check verify");
+        let start = start_timer_with_timestamp!("zero check verify");
 
         // check that the sum is zero
         if proof.proofs[0].evaluations[0] + proof.proofs[0].evaluations[1] != F::zero() {
@@ -158,7 +158,7 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed zero check; master");
+        let start = start_timer_with_timestamp!("Distributed zero check; master");
 
         let length = poly_aux_info.num_variables;
         let mut r = transcript.get_and_append_challenge_vectors(b"0check r", length)?;
@@ -219,7 +219,10 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
-        let timer = start_timer!(|| "Distributed zero check; worker");
+        let timer = start_timer_with_timestamp!(format!(
+            "Distributed zero check; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         // let start_data: [u8; 26] = worker_channel.recv()?;
         // if &start_data != b"zero check starting signal" {

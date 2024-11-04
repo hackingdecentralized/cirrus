@@ -16,11 +16,11 @@ use crate::{
     },
     MasterProverChannel, MultilinearProverParam, WorkerProverChannel,
 };
-use arithmetic::{get_index, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{get_index, start_timer_with_timestamp, VPAuxInfo, VirtualPolynomial};
 use ark_ec::pairing::Pairing;
 use ark_ff::{One, PrimeField, Zero};
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
 
@@ -287,7 +287,7 @@ where
         ),
         PolyIOPErrors,
     > {
-        let start = start_timer!(|| "prod_check prove");
+        let start = start_timer_with_timestamp!("prod_check prove");
 
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
@@ -340,7 +340,7 @@ where
         aux_info: &VPAuxInfo<E::ScalarField>,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "prod_check verify");
+        let start = start_timer_with_timestamp!("prod_check verify");
 
         // update transcript and generate challenge
         transcript.append_serializable_element(b"frac(x)", &proof.frac_comm)?;
@@ -393,11 +393,11 @@ where
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed prod check; master");
+        let start = start_timer_with_timestamp!("Distributed prod check; master");
         let log_num_workers = master_channel.log_num_workers();
 
-        let preparation = start_timer!(|| "Distributed prod check preparation; master");
-        master_channel.send_uniform(b"prod check starting signal")?;
+        let preparation =
+            start_timer_with_timestamp!("Distributed prod check preparation; master");
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
         let prod_master = compute_product_poly(&Arc::new(
             DenseMultilinearExtension::from_evaluations_vec(log_num_workers, sub_prod.clone()),
@@ -486,8 +486,14 @@ where
         gxs: &[Self::MultilinearExtension],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Distribution product check; prover");
-        let preparation = start_timer!(|| "Distribution product check preparation; prover");
+        let start = start_timer_with_timestamp!(format!(
+            "Distribution product check; worker_id {}",
+            worker_channel.worker_id()
+        ));
+        let preparation = start_timer_with_timestamp!(format!(
+            "Distribution product check preparation; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
@@ -505,11 +511,6 @@ where
                     "fx and gx have different number of variables".to_string(),
                 ));
             }
-        }
-
-        let start_data: [u8; 26] = worker_channel.recv()?;
-        if &start_data != b"prod check starting signal" {
-            return Err(PolyIOPErrors::InvalidDistributedMessage);
         }
 
         // compute the fractional polynomial frac_p s.t.
@@ -614,7 +615,7 @@ where
         aux_info: &VPAuxInfo<<E as Pairing>::ScalarField>,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed prod check; verifier");
+        let start = start_timer_with_timestamp!("Distributed prod check; verifier");
 
         // update transcript and generate challenge
         transcript.append_serializable_element(b"frac(x)", &proof.frac_comm)?;

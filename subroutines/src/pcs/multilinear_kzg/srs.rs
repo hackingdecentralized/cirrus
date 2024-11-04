@@ -10,13 +10,13 @@ use crate::pcs::{
     prelude::PCSError,
     StructuredReferenceString,
 };
+use arithmetic::start_timer_with_timestamp;
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, AffineRepr, CurveGroup};
 use ark_ff::{Field, PrimeField, Zero};
 use ark_poly::DenseMultilinearExtension;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    collections::LinkedList, end_timer, format, rand::Rng, start_timer, string::ToString, vec::Vec,
-    UniformRand,
+    collections::LinkedList, end_timer, format, rand::Rng, string::ToString, vec::Vec, UniformRand,
 };
 use core::iter::FromIterator;
 
@@ -132,9 +132,9 @@ impl<E: Pairing> StructuredReferenceString<E> for MultilinearUniversalParams<E> 
             ));
         }
 
-        let total_timer = start_timer!(|| "SRS generation");
+        let total_timer = start_timer_with_timestamp!("SRS generation");
 
-        let pp_generation_timer = start_timer!(|| "Prover Param generation");
+        let pp_generation_timer = start_timer_with_timestamp!("Prover Param generation");
 
         let g = E::G1::rand(rng);
         let h = E::G2::rand(rng);
@@ -205,7 +205,7 @@ impl<E: Pairing> StructuredReferenceString<E> for MultilinearUniversalParams<E> 
 
         end_timer!(pp_generation_timer);
 
-        let vp_generation_timer = start_timer!(|| "VP generation");
+        let vp_generation_timer = start_timer_with_timestamp!("VP generation");
         let h_mask = {
             let window_size = FixedBase::get_mul_window_size(num_vars);
             let h_table = FixedBase::get_window_table(scalar_bits, window_size, h);

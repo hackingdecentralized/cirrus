@@ -9,12 +9,13 @@ from typing import List
 
 import argparse
 
-start_pattern = r'\.*Start: {3}(.*)'
-end_pattern = r'End: {5}(.*) \.*(\d+\.?\d*)([mµn]?s)'
+start_pattern = r'\.*Start: {3}(.*) timestamp: (\d+)'
+end_pattern = r'End: {5}(.*) timestamp: \d+ \.*(\d+\.?\d*)([mµn]?s)'
 
 @dataclass
 class Task:
     name: str
+    start_time: float
     duration: float
     send_time: float
     recv_time: float
@@ -23,8 +24,9 @@ class Task:
     recv_round: int
     sub_tasks: List[Task]
 
-    def __init__(self, name: str, duration: float, tasks: List[Task] = None):
+    def __init__(self, name: str, start_time: float, duration: float, tasks: List[Task] = None):
         self.name = name
+        self.start_time = start_time
         self.duration = duration
         self.sub_tasks = tasks or []
 
@@ -64,6 +66,7 @@ if __name__ == "__main__":
             assert matches, f"Invalid line: {line}"
 
             name = matches.group(1)
+            start_time = int(matches.group(2)) / 1000
             line = f.readline()
             tasks = []
             while re.search(start_pattern, line):
@@ -86,7 +89,7 @@ if __name__ == "__main__":
             else:
                 assert False, f"Invalid unit: {unit}"
 
-            return Task(name, duration, tasks)
+            return Task(name, start_time, duration, tasks)
 
         line = f.readline()
         while line:

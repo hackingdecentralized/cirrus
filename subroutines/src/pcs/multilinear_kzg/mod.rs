@@ -15,7 +15,8 @@ use crate::{
     BatchProof, MasterProverChannel, PolyIOP, SumCheckDistributed, WorkerProverChannel,
 };
 use arithmetic::{
-    build_eq_x_r, build_eq_x_r_vec, eq_eval, evaluate_opt, transpose, VPAuxInfo, VirtualPolynomial,
+    build_eq_x_r, build_eq_x_r_vec, eq_eval, evaluate_opt, start_timer_with_timestamp, transpose,
+    VPAuxInfo, VirtualPolynomial,
 };
 use ark_ec::{
     pairing::Pairing,
@@ -26,8 +27,8 @@ use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    borrow::Borrow, end_timer, format, log2, marker::PhantomData, rand::Rng, start_timer,
-    string::ToString, sync::Arc, vec::Vec, One, Zero,
+    borrow::Borrow, end_timer, format, log2, marker::PhantomData, rand::Rng, string::ToString,
+    sync::Arc, vec::Vec, One, Zero,
 };
 use std::ops::Mul;
 // use batching::{batch_verify_internal, multi_open_internal};
@@ -110,7 +111,7 @@ impl<E: Pairing> PolynomialCommitmentScheme<E> for MultilinearKzgPCS<E> {
         poly: &Self::Polynomial,
     ) -> Result<Self::Commitment, PCSError> {
         let prover_param = prover_param.borrow();
-        let commit_timer = start_timer!(|| "commit");
+        let commit_timer = start_timer_with_timestamp!("commit");
         if prover_param.num_vars < poly.num_vars {
             return Err(PCSError::InvalidParameters(format!(
                 "MlE length ({}) exceeds param limit ({})",
@@ -119,7 +120,7 @@ impl<E: Pairing> PolynomialCommitmentScheme<E> for MultilinearKzgPCS<E> {
         }
         let ignored = prover_param.num_vars - poly.num_vars;
         let scalars: Vec<_> = poly.to_evaluations();
-        let msm_timer = start_timer!(|| format!(
+        let msm_timer = start_timer_with_timestamp!(format!(
             "msm of size {}",
             prover_param.powers_of_g[ignored].evals.len()
         ));
@@ -286,6 +287,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         _handle: &Self::MasterPolynomialHandle,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::Commitment, PCSError> {
+        let timer = start_timer_with_timestamp!("multilinear KZG: commit; master");
         let master_num_vars = master_prover_param.borrow().num_vars;
 
         if master_num_vars != master_channel.log_num_workers() {
@@ -296,15 +298,19 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             )));
         }
 
-        master_channel.send_uniform(b"commit starting signal")?;
         let commitments: Vec<E::G1Affine> = master_channel.recv()?;
         // commitments.iter().fold(E::G1Affine::from(1), |acc, x| acc * x.0);
+
+        let msm_timer =
+            start_timer_with_timestamp!(format!("msm of size {}; master", commitments.len()));
         let commitment = E::G1::msm_unchecked(
             &commitments,
             &vec![<E as Pairing>::ScalarField::from(1u128); 1 << master_num_vars],
         )
         .into_affine();
 
+        end_timer!(msm_timer);
+        end_timer!(timer);
         Ok(Commitment(commitment))
     }
 
@@ -321,7 +327,11 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError> {
         let worker_prover_param = worker_prover_param.borrow();
-        let commit_timer = start_timer!(|| "commit");
+        let commit_timer = start_timer_with_timestamp!(format!(
+            "multilinear KZG: commit; worker_id {}",
+            worker_channel.worker_id()
+        ));
+
         if worker_prover_param.num_vars != poly.num_vars {
             return Err(PCSError::InvalidParameters(format!(
                 "MlE length ({}) not equal to prover params ({})",
@@ -329,18 +339,11 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             )));
         }
 
-        let start_msg: [u8; 22] = worker_channel.recv()?;
-        if &start_msg != b"commit starting signal" {
-            return Err(PCSError::InvalidParameters(format!(
-                "Received unexpected message: {:?}",
-                start_msg
-            )));
-        }
-
         let scalars: Vec<_> = poly.to_evaluations();
-        let msm_timer = start_timer!(|| format!(
-            "msm of size {}",
-            worker_prover_param.powers_of_g[0].evals.len()
+        let msm_timer = start_timer_with_timestamp!(format!(
+            "msm of size {}; worker_id {}",
+            worker_prover_param.powers_of_g[0].evals.len(),
+            worker_channel.worker_id()
         ));
         let commitment: E::G1Affine = E::G1::msm_unchecked(
             &worker_prover_param.powers_of_g[0].evals,
@@ -349,9 +352,8 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         .into_affine();
         end_timer!(msm_timer);
 
-        end_timer!(commit_timer);
-
         worker_channel.send(&commitment)?;
+        end_timer!(commit_timer);
         Ok(())
     }
 
@@ -379,6 +381,8 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         point: &Self::Point,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::Proof, Self::Evaluation), PCSError> {
+        let timer = start_timer_with_timestamp!("multilinear KZG: open; master");
+
         let master_num_vars = master_prover_param.borrow().num_vars;
         let worker_num_vars = *handle - master_num_vars;
 
@@ -443,6 +447,8 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             x
         };
 
+        end_timer!(timer);
+
         Ok((
             MultilinearKzgProof {
                 proofs: aggregated_proof,
@@ -467,6 +473,11 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         poly: &Self::WorkerPolynomialHandle,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError> {
+        let timer = start_timer_with_timestamp!(format!(
+            "multilinear KZG: open; worker_id {}",
+            worker_channel.worker_id()
+        ));
+
         if worker_prover_param.borrow().num_vars != poly.num_vars {
             return Err(PCSError::InvalidParameters(format!(
                 "MlE length ({}) not equal to prover params ({})",
@@ -489,6 +500,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let (proof, _) = open_internal(worker_prover_param.borrow(), poly, &point)?;
         worker_channel.send(&proof)?;
 
+        end_timer!(timer);
         Ok(())
     }
 
@@ -513,7 +525,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         transcript: &mut IOPTranscript<E::ScalarField>,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::BatchProof, PCSError> {
-        let timer = start_timer!(|| "multilinear KZG: multiple open; master");
+        let timer = start_timer_with_timestamp!("multilinear KZG: multiple open; master");
 
         let num_var = *handle;
         let log_num_workers = master_channel.log_num_workers();
@@ -616,7 +628,10 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         polynomials: &[Self::WorkerPolynomialHandle],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError> {
-        let timer = start_timer!(|| "multilinear KZG: multiple open; worker");
+        let timer = start_timer_with_timestamp!(format!(
+            "multilinear KZG: multiple open; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let k = polynomials.len();
         let num_vars = polynomials[0].num_vars;
@@ -722,7 +737,8 @@ fn open_internal<E: Pairing>(
     polynomial: &DenseMultilinearExtension<E::ScalarField>,
     point: &[E::ScalarField],
 ) -> Result<(MultilinearKzgProof<E>, E::ScalarField), PCSError> {
-    let open_timer = start_timer!(|| format!("open mle with {} variable", polynomial.num_vars));
+    let open_timer =
+        start_timer_with_timestamp!(format!("open mle with {} variable", polynomial.num_vars));
 
     if polynomial.num_vars() > prover_param.num_vars {
         return Err(PCSError::InvalidParameters(format!(
@@ -751,14 +767,14 @@ fn open_internal<E: Pairing>(
         .zip(prover_param.powers_of_g[ignored..ignored + nv].iter())
         .enumerate()
     {
-        let ith_round = start_timer!(|| format!("{}-th round", i));
+        let ith_round = start_timer_with_timestamp!(format!("{}-th round", i));
 
         let k = nv - 1 - i;
         let cur_dim = 1 << k;
         let mut q = vec![E::ScalarField::zero(); cur_dim];
         let mut r = vec![E::ScalarField::zero(); cur_dim];
 
-        let ith_round_eval = start_timer!(|| format!("{}-th round eval", i));
+        let ith_round_eval = start_timer_with_timestamp!(format!("{}-th round eval", i));
         for b in 0..(1 << k) {
             // q[b] = f[1, b] - f[0, b]
             q[b] = f[(b << 1) + 1] - f[b << 1];
@@ -770,7 +786,11 @@ fn open_internal<E: Pairing>(
         end_timer!(ith_round_eval);
 
         // this is a MSM over G1 and is likely to be the bottleneck
-        let msm_timer = start_timer!(|| format!("msm of size {} at round {}", gi.evals.len(), i));
+        let msm_timer = start_timer_with_timestamp!(format!(
+            "msm of size {} at round {}",
+            gi.evals.len(),
+            i
+        ));
 
         proofs.push(E::G1::msm_unchecked(&gi.evals, &q).into_affine());
         end_timer!(msm_timer);
@@ -795,7 +815,7 @@ fn verify_internal<E: Pairing>(
     value: &E::ScalarField,
     proof: &MultilinearKzgProof<E>,
 ) -> Result<bool, PCSError> {
-    let verify_timer = start_timer!(|| "verify");
+    let verify_timer = start_timer_with_timestamp!("verify");
     let num_var = point.len();
 
     if num_var > verifier_param.num_vars {
@@ -805,7 +825,7 @@ fn verify_internal<E: Pairing>(
         )));
     }
 
-    let prepare_inputs_timer = start_timer!(|| "prepare pairing inputs");
+    let prepare_inputs_timer = start_timer_with_timestamp!("prepare pairing inputs");
 
     let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
     let window_size = FixedBase::get_mul_window_size(num_var);
@@ -821,7 +841,7 @@ fn verify_internal<E: Pairing>(
     let h_vec: Vec<E::G2Affine> = E::G2::normalize_batch(&h_vec);
     end_timer!(prepare_inputs_timer);
 
-    let pairing_product_timer = start_timer!(|| "pairing product");
+    let pairing_product_timer = start_timer_with_timestamp!("pairing product");
 
     let mut pairings: Vec<_> = proof
         .proofs

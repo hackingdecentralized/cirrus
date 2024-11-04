@@ -4,10 +4,10 @@
 // You should have received a copy of the MIT License
 // along with the HyperPlonk library. If not, see <https://mit-license.org/>.
 
-use crate::{util::get_batched_nv, ArithErrors};
+use crate::{start_timer_with_timestamp, util::get_batched_nv, ArithErrors};
 use ark_ff::{Field, PrimeField};
 use ark_poly::MultilinearExtension;
-use ark_std::{end_timer, rand::RngCore, start_timer};
+use ark_std::{end_timer, rand::RngCore};
 #[cfg(feature = "parallel")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{cmp::min, sync::Arc};
@@ -23,7 +23,7 @@ pub fn random_mle_list<F: PrimeField, R: RngCore>(
     degree: usize,
     rng: &mut R,
 ) -> (Vec<Arc<DenseMultilinearExtension<F>>>, F) {
-    let start = start_timer!(|| "sample random mle list");
+    let start = start_timer_with_timestamp!("sample random mle list");
     let mut multiplicands = Vec::with_capacity(degree);
     for _ in 0..degree {
         multiplicands.push(Vec::with_capacity(1 << nv))
@@ -78,7 +78,7 @@ pub fn random_zero_mle_list<F: PrimeField, R: RngCore>(
     degree: usize,
     rng: &mut R,
 ) -> Vec<Arc<DenseMultilinearExtension<F>>> {
-    let start = start_timer!(|| "sample random zero mle list");
+    let start = start_timer_with_timestamp!("sample random zero mle list");
 
     let mut multiplicands = Vec::with_capacity(degree);
     for _ in 0..degree {

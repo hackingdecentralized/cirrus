@@ -1,9 +1,11 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use arithmetic::{identity_permutation, split_into_chunks, transpose, VPAuxInfo};
+use arithmetic::{
+    identity_permutation, split_into_chunks, start_timer_with_timestamp, transpose, VPAuxInfo,
+};
 use ark_ec::pairing::Pairing;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_std::{end_timer, log2, start_timer, One, Zero};
+use ark_std::{end_timer, log2, One, Zero};
 use rayon::iter::IntoParallelRefIterator;
 #[cfg(feature = "parallel")]
 use rayon::iter::ParallelIterator;
@@ -165,7 +167,7 @@ where
         log_num_workers: usize,
         master_channel: &mut impl subroutines::MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors> {
-        let start = start_timer!(|| "Cirrus; master");
+        let start = start_timer_with_timestamp!("Cirrus; master");
 
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"cirrus");
 
@@ -185,7 +187,7 @@ where
         // 1. Master prover distributes the witness polynomials to workers and commits
         //    to them
         // =======================================================================
-        let step = start_timer!(|| "distribute and commit witnesses; master");
+        let step = start_timer_with_timestamp!("distribute and commit witnesses; master");
 
         assert!(
             num_vars >= log_num_workers + 1,
@@ -216,7 +218,7 @@ where
         // where f is the gate function
         // =======================================================================
 
-        let step = start_timer!(|| "Distributed zero check on f; master");
+        let step = start_timer_with_timestamp!("Distributed zero check on f; master");
 
         let aux_info = VPAuxInfo {
             max_degree: pk.params.gate_func.degree(),
@@ -239,8 +241,9 @@ where
         // polynomials and the permutation oracles.
         // =======================================================================
 
-        let step =
-            start_timer!(|| "Distributed permutation check on witnesses and permutations; master");
+        let step = start_timer_with_timestamp!({
+            "Distributed permutation check on witnesses and permutations; master"
+        });
 
         let (perm_check_proof, prod_master) =
             <Self as PermutationCheckDistributed<E, PCS>>::prove_master(
@@ -259,7 +262,7 @@ where
         // 4. generate pcs batch proof
         // =======================================================================
 
-        let step = start_timer!(|| "generate pcs batch proof; master");
+        let step = start_timer_with_timestamp!("generate pcs batch proof; master");
 
         let perm_check_point = perm_check_proof.zero_check_proof.point.clone();
         // prod_master 's points
@@ -360,7 +363,10 @@ where
         pk: &Self::ProvingKeyWorker,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
-        let start = start_timer!(|| "Cirrus; worker");
+        let start = start_timer_with_timestamp!(format!(
+            "Cirrus; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let num_vars = pk.selector_oracles[0].num_vars();
         let mut pcs_acc = PcsAccumulatorWorker::<E, PCS>::new(num_vars);
@@ -368,7 +374,10 @@ where
         // =======================================================================
         // 1. Worker prover receives the witness polynomials and commits to them
         // =======================================================================
-        let step = start_timer!(|| "distribute and commit witnesses; master");
+        let step = start_timer_with_timestamp!(format!(
+            "distribute and commit witnesses; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let witnesses: Vec<Vec<E::ScalarField>> = worker_channel.recv()?;
         let witness_polys = witnesses
@@ -388,7 +397,10 @@ where
         //    w_0(x),...w_d(x))
         // where f is the gate function
         // =======================================================================
-        let step = start_timer!(|| "Distributed zero check on f; worker");
+        let step = start_timer_with_timestamp!(format!(
+            "Distributed zero check on f; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let fx = build_f_raw(
             &pk.params.gate_func,
@@ -405,8 +417,10 @@ where
         // 3. Worker prover runs distributed permutation check on the witness
         // polynomials and the permutation oracles.
         // =======================================================================
-        let step =
-            start_timer!(|| "Distributed permutation check on witnesses and permutations; worker");
+        let step = start_timer_with_timestamp!(format!(
+            "Distributed permutation check on witnesses and permutations; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let (prod_worker, frac) = <Self as PermutationCheckDistributed<E, PCS>>::prove_worker(
             &pk.pcs_param,
@@ -425,7 +439,10 @@ where
         // the master prover.
         // =======================================================================
 
-        let step = start_timer!(|| "generate pcs batch proof; worker");
+        let step = start_timer_with_timestamp!(format!(
+            "generate pcs batch proof; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let prod_master = {
             let f: E::ScalarField = worker_channel.recv()?;
@@ -484,7 +501,7 @@ where
         _pub_input: &[<E as Pairing>::ScalarField],
         proof: &Self::Proof,
     ) -> Result<bool, HyperPlonkErrors> {
-        let start = start_timer!(|| "Cirrus; verify");
+        let start = start_timer_with_timestamp!("Cirrus; verify");
 
         let num_vars = vk.params.num_variables();
         let log_num_workers = proof.perm_check_proof.log_num_workers;
