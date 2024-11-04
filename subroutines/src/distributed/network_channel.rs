@@ -39,13 +39,39 @@ impl MasterProverChannelSocket {
         println!("Master listening on {}", master_addr);
 
         let expected_workers = 1 << self.log_num_workers;
-        for _ in 0..expected_workers {
-            let (socket, addr) = listener
+
+        let mut socket_storage = Vec::new();
+        let mut permutation = vec![usize::MAX; expected_workers];
+
+        for i in 0..expected_workers {
+            let (mut socket, addr) = listener
                 .accept()
                 .map_err(|_| DistributedError::MasterListenError)?;
-            println!("Accepted connection from worker at {}", addr);
-            self.worker_sockets.push(socket);
+
+            let mut worker_id_buf = [0u8; 8];
+            socket
+                .read_exact(&mut worker_id_buf)
+                .map_err(|_| DistributedError::MasterListenError)?;
+            let worker_id = u64::from_le_bytes(worker_id_buf) as usize;
+            if permutation[worker_id] != usize::MAX {
+                return Err(DistributedError::WorkerIdConflict(worker_id));
+            }
+
+            let start_msg = [1u8];
+            socket
+                .write_all(&start_msg)
+                .map_err(|_| DistributedError::MasterListenError)?;
+
+            println!("Accepted connection from worker {} at {}", worker_id, addr);
+
+            socket_storage.push(socket);
+            permutation[worker_id] = i;
         }
+
+        self.worker_sockets = permutation
+            .into_iter()
+            .map(|i| socket_storage[i].try_clone().unwrap())
+            .collect();
 
         Ok(())
     }
@@ -206,8 +232,25 @@ impl WorkerProverChannelSocket {
     /// Creates a new WorkerProverChannelSocket and connects to the master at
     /// the specified address.
     pub fn bind(master_addr: &str, worker_id: usize) -> Result<Self, DistributedError> {
-        let socket =
+        let mut socket =
             TcpStream::connect(master_addr).map_err(|_| DistributedError::WorkerConnectError)?;
+
+        // Send worker ID to the master
+        let msg: [u8; 8] = (worker_id as u64).to_le_bytes();
+        socket
+            .write_all(&msg)
+            .map_err(|_| DistributedError::WorkerConnectError)?;
+
+        // Receive start message from the master
+        let mut start_msg = [0u8; 1];
+        socket
+            .read_exact(&mut start_msg)
+            .map_err(|_| DistributedError::WorkerConnectError)?;
+
+        if start_msg[0] != 1 {
+            return Err(DistributedError::WorkerConnectError);
+        }
+
         Ok(WorkerProverChannelSocket { worker_id, socket })
     }
 }
@@ -224,18 +267,13 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
 
         let msg_len = (serialized_msg.len() as u64).to_le_bytes();
 
-        let mut socket = self
-            .socket
-            .try_clone()
-            .map_err(|_| DistributedError::WorkerSendError)?;
-
         // Send message length to the master's socket
-        socket
+        self.socket
             .write_all(&msg_len)
             .map_err(|_| DistributedError::WorkerSendError)?;
 
         // Send the actual message to the master's socket
-        socket
+        self.socket
             .write_all(&serialized_msg)
             .map_err(|_| DistributedError::WorkerSendError)?;
 
