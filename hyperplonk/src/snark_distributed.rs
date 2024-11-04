@@ -177,7 +177,7 @@ where
             "log_num_workers mismatch with the master channel and proving key"
         );
         let log_num_workers = master_channel.log_num_workers();
-        let ell = log2(pk.params.num_pub_input) as usize;
+        let _ell = log2(pk.params.num_pub_input) as usize;
 
         let mut pcs_acc = PcsAccumulatorMaster::<E, PCS>::new(num_vars);
 
@@ -478,16 +478,17 @@ where
         Ok(())
     }
 
+    /// TODO: Implement the check of public input
     fn verify(
         vk: &Self::VerifyingKey,
-        pub_input: &[<E as Pairing>::ScalarField],
+        _pub_input: &[<E as Pairing>::ScalarField],
         proof: &Self::Proof,
     ) -> Result<bool, HyperPlonkErrors> {
         let start = start_timer!(|| "Cirrus; verify");
 
         let num_vars = vk.params.num_variables();
         let log_num_workers = proof.perm_check_proof.log_num_workers;
-        let num_pub_input = vk.params.num_pub_input;
+        let _num_pub_input = vk.params.num_pub_input;
         let num_witness_columns = vk.params.gate_func.num_witness_columns();
         let num_selector_columns = vk.params.gate_func.num_selector_columns();
 

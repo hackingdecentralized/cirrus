@@ -92,10 +92,6 @@ fn main() -> Result<(), HyperPlonkErrors> {
     )?;
 
     println!(
-        "[INFO] Writing proving keys and verification key to {}",
-        output.display()
-    );
-    println!(
         "[INFO] #constraints: {}, #witnesses: {}, ",
         1 << nv,
         (1 << nv) * circuit.num_witness_columns()
@@ -107,22 +103,22 @@ fn main() -> Result<(), HyperPlonkErrors> {
 
     let path = output.join("circuit.plonk");
     let mut f = std::fs::File::create(path).unwrap();
-    circuit.serialize_compressed(&mut f).unwrap();
+    circuit.serialize_uncompressed(&mut f).unwrap();
 
     let path = output.join("master.pk");
 
     let mut f = std::fs::File::create(path).unwrap();
-    pk_master.serialize_compressed(&mut f).unwrap();
+    pk_master.serialize_uncompressed(&mut f).unwrap();
 
     for (i, pk) in pk_workers.into_iter().enumerate() {
         let path = output.join(format!("worker_{}.pk", i));
         let mut f = std::fs::File::create(path).unwrap();
-        pk.serialize_compressed(&mut f).unwrap();
+        pk.serialize_uncompressed(&mut f).unwrap();
     }
 
     let path = output.join("verify.key");
     let mut f = std::fs::File::create(path).unwrap();
-    vk.serialize_compressed(&mut f).unwrap();
+    vk.serialize_uncompressed(&mut f).unwrap();
 
     println!("[INFO] Setup completed successfully");
 

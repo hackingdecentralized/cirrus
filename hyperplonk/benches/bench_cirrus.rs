@@ -14,7 +14,7 @@ fn main() -> Result<(), HyperPlonkErrors> {
     let mut rng = test_rng();
     let pcs_srs = MultilinearKzgPCS::<E>::gen_srs_for_testing(&mut rng, 24)?;
 
-    for nv in (10..=24).step_by(2) {
+    for nv in (20..=22).step_by(2) {
         helper(nv, &pcs_srs)?;
     }
 

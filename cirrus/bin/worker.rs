@@ -13,6 +13,8 @@ type PCS = MultilinearKzgPCS<E>;
 
 #[derive(Parser)]
 struct Args {
+    #[clap(long, value_name = "number of threads", default_value = "1")]
+    num_threads: usize,
     #[clap(long, value_name = "worker id", default_value = "0")]
     worker_id: usize,
     #[clap(
@@ -31,6 +33,7 @@ struct Args {
 
 fn main() -> Result<(), HyperPlonkErrors> {
     let Args {
+        num_threads,
         worker_id,
         pk_worker,
         master_addr,
@@ -42,8 +45,20 @@ fn main() -> Result<(), HyperPlonkErrors> {
         ));
     }
 
+    #[cfg(feature = "parallel")]
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .unwrap();
+
+    #[cfg(feature = "parallel")]
+    println!("[INFO] rayon threads: {:?}", rayon::current_num_threads());
+
+    #[cfg(not(feature = "parallel"))]
+    println!("[WARN] parallel feature is disabled, using single thread");
+
     let file = File::open(pk_worker).unwrap();
-    let pk_worker = HyperPlonkProvingKeyWorker::<E, PCS>::deserialize_compressed(&file).unwrap();
+    let pk_worker = HyperPlonkProvingKeyWorker::<E, PCS>::deserialize_uncompressed(&file).unwrap();
 
     let mut worker_channel = WorkerProverChannelSocket::bind(&master_addr, worker_id).unwrap();
 

@@ -2,8 +2,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
 
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
@@ -116,20 +115,22 @@ impl MasterProverChannel for MasterProverChannelThread {
     }
 
     /// TODO: Can you make it parallel?
+    /// We found that the parallel version will cause (deadlock?).
+    /// Not knowing the exact reason.
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
-        #[cfg(feature = "parallel")]
-        return self
-            .recv_channel
-            .par_iter_mut()
-            .map(|channel| {
-                let received_msg = channel
-                    .recv()
-                    .map_err(|_| DistributedError::MasterRecvError)?;
-                T::deserialize_compressed(&received_msg[..]).map_err(DistributedError::from)
-            })
-            .collect();
+        // #[cfg(feature = "parallel")]
+        // return self
+        //     .recv_channel
+        //     .par_iter_mut()
+        //     .map(|channel| {
+        //         let received_msg = channel
+        //             .recv()
+        //             .map_err(|_| DistributedError::MasterRecvError)?;
+        //         T::deserialize_compressed(&received_msg[..]).
+        // map_err(DistributedError::from)     })
+        //     .collect();
 
-        #[cfg(not(feature = "parallel"))]
+        // #[cfg(not(feature = "parallel"))]
         return self
             .recv_channel
             .iter()

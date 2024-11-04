@@ -1,6 +1,9 @@
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{end_timer, start_timer};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -56,6 +59,21 @@ impl MasterProverChannel for MasterProverChannelSocket {
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
 
+        #[cfg(feature = "parallel")]
+        self.worker_sockets
+            .par_iter_mut()
+            .map(|worker_socket| {
+                let msg_len = (serialized_msg.len() as u64).to_le_bytes();
+                worker_socket
+                    .write_all(&msg_len)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+                worker_socket
+                    .write_all(&serialized_msg)
+                    .map_err(|_| DistributedError::MasterSendError)
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
+
+        #[cfg(not(feature = "parallel"))]
         for worker_socket in &self.worker_sockets {
             let mut socket = worker_socket
                 .try_clone()
@@ -83,6 +101,28 @@ impl MasterProverChannel for MasterProverChannelSocket {
             return Err(DistributedError::MasterSendError);
         }
 
+        #[cfg(feature = "parallel")]
+        self.worker_sockets
+            .par_iter_mut()
+            .zip(msgs.into_par_iter())
+            .map(|(worker_socket, msg)| {
+                let mut serialized_msg = Vec::new();
+                msg.serialize_compressed(&mut serialized_msg)
+                    .map_err(DistributedError::from)?;
+
+                let msg_len = (serialized_msg.len() as u64).to_le_bytes();
+                worker_socket
+                    .write_all(&msg_len)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+                worker_socket
+                    .write_all(&serialized_msg)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+
+                Ok(())
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
+
+        #[cfg(not(feature = "parallel"))]
         for (i, worker_socket) in self.worker_sockets.iter().enumerate() {
             let mut serialized_msg = Vec::new();
             msgs[i]
@@ -108,8 +148,31 @@ impl MasterProverChannel for MasterProverChannelSocket {
 
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
         let start = start_timer!(|| "MasterProverChannel::recv");
-        let mut results = Vec::new();
 
+        #[cfg(feature = "parallel")]
+        let results = self
+            .worker_sockets
+            .par_iter_mut()
+            .map(|worker_socket| {
+                let mut len_buf = [0u8; 8];
+                worker_socket
+                    .read_exact(&mut len_buf)
+                    .map_err(|_| DistributedError::MasterRecvError)?;
+                let msg_len = u64::from_le_bytes(len_buf) as usize;
+
+                let mut buffer = vec![0; msg_len];
+                worker_socket
+                    .read_exact(&mut buffer)
+                    .map_err(|_| DistributedError::MasterRecvError)?;
+
+                let msg = T::deserialize_compressed(&buffer[..]).map_err(DistributedError::from)?;
+                Ok(msg)
+            })
+            .collect::<Result<Vec<T>, DistributedError>>()?;
+
+        #[cfg(not(feature = "parallel"))]
+        let mut results = Vec::new();
+        #[cfg(not(feature = "parallel"))]
         for worker_socket in &self.worker_sockets {
             let mut socket = worker_socket
                 .try_clone()
