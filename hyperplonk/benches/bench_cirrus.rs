@@ -3,7 +3,7 @@ use ark_std::test_rng;
 use hyperplonk::{prelude::*, HyperPlonkSNARKDistributed};
 use std::{thread::spawn, time::Instant};
 use subroutines::{
-    new_master_worker_thread_channels, MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP,
+    new_master_worker_channels, MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP,
     PolynomialCommitmentScheme,
 };
 
@@ -32,7 +32,8 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
     assert!(circuit.is_satisfied());
     let index = circuit.index;
 
-    let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+    let (mut master_channel, worker_channels) =
+        new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
     let ((pk_master, pk_workers), vk) = <PolyIOP<Fr> as HyperPlonkSNARKDistributed<
         E,

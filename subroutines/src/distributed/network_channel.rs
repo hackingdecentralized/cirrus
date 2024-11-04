@@ -57,11 +57,6 @@ impl MasterProverChannelSocket {
                 return Err(DistributedError::WorkerIdConflict(worker_id));
             }
 
-            let start_msg = [1u8];
-            socket
-                .write_all(&start_msg)
-                .map_err(|_| DistributedError::MasterListenError)?;
-
             println!("Accepted connection from worker {} at {}", worker_id, addr);
 
             socket_storage.push(socket);
@@ -72,6 +67,16 @@ impl MasterProverChannelSocket {
             .into_iter()
             .map(|i| socket_storage[i].try_clone().unwrap())
             .collect();
+
+        let start_msg = [1u8];
+        self.worker_sockets
+            .par_iter_mut()
+            .map(|socket| {
+                socket
+                    .write_all(&start_msg)
+                    .map_err(|_| DistributedError::MasterListenError)
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
 
         Ok(())
     }
@@ -176,25 +181,30 @@ impl MasterProverChannel for MasterProverChannelSocket {
         let start = start_timer!(|| "MasterProverChannel::recv");
 
         #[cfg(feature = "parallel")]
-        let results = self
-            .worker_sockets
-            .par_iter_mut()
-            .map(|worker_socket| {
-                let mut len_buf = [0u8; 8];
-                worker_socket
-                    .read_exact(&mut len_buf)
-                    .map_err(|_| DistributedError::MasterRecvError)?;
-                let msg_len = u64::from_le_bytes(len_buf) as usize;
+        let results = rayon::ThreadPoolBuilder::default()
+            .build()
+            .unwrap()
+            .install(|| {
+                self.worker_sockets
+                    .par_iter_mut()
+                    .map(|worker_socket| {
+                        let mut len_buf = [0u8; 8];
+                        worker_socket
+                            .read_exact(&mut len_buf)
+                            .map_err(|_| DistributedError::MasterRecvError)?;
+                        let msg_len = u64::from_le_bytes(len_buf) as usize;
 
-                let mut buffer = vec![0; msg_len];
-                worker_socket
-                    .read_exact(&mut buffer)
-                    .map_err(|_| DistributedError::MasterRecvError)?;
+                        let mut buffer = vec![0; msg_len];
+                        worker_socket
+                            .read_exact(&mut buffer)
+                            .map_err(|_| DistributedError::MasterRecvError)?;
 
-                let msg = T::deserialize_compressed(&buffer[..]).map_err(DistributedError::from)?;
-                Ok(msg)
-            })
-            .collect::<Result<Vec<T>, DistributedError>>()?;
+                        let msg = T::deserialize_compressed(&buffer[..])
+                            .map_err(DistributedError::from)?;
+                        Ok(msg)
+                    })
+                    .collect::<Result<Vec<T>, DistributedError>>()
+            })?;
 
         #[cfg(not(feature = "parallel"))]
         let mut results = Vec::new();

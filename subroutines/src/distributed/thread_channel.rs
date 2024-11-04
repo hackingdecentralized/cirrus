@@ -2,7 +2,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+    IntoParallelRefMutIterator, ParallelIterator,
 };
 
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
@@ -117,20 +118,32 @@ impl MasterProverChannel for MasterProverChannelThread {
     /// TODO: Can you make it parallel?
     /// We found that the parallel version will cause (deadlock?).
     /// Not knowing the exact reason.
+    /// Answer: The reason is that the recv threads may take up
+    /// all the available threads in the thread pool, such that
+    /// when workers trying to use thread pool, they will be blocked
+    /// and cause deadlock.
+    ///
+    /// Cycle of dependencies:
+    /// Master Recv <- Thread pool <- Worker Compute <- Worker Send <- Master
+    /// Recv
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
-        // #[cfg(feature = "parallel")]
-        // return self
-        //     .recv_channel
-        //     .par_iter_mut()
-        //     .map(|channel| {
-        //         let received_msg = channel
-        //             .recv()
-        //             .map_err(|_| DistributedError::MasterRecvError)?;
-        //         T::deserialize_compressed(&received_msg[..]).
-        // map_err(DistributedError::from)     })
-        //     .collect();
+        #[cfg(feature = "parallel")]
+        return rayon::ThreadPoolBuilder::default()
+            .build()
+            .unwrap()
+            .install(|| {
+                self.recv_channel
+                    .par_iter_mut()
+                    .map(|channel| {
+                        let received_msg = channel
+                            .recv()
+                            .map_err(|_| DistributedError::MasterRecvError)?;
+                        T::deserialize_compressed(&received_msg[..]).map_err(DistributedError::from)
+                    })
+                    .collect()
+            });
 
-        // #[cfg(not(feature = "parallel"))]
+        #[cfg(not(feature = "parallel"))]
         return self
             .recv_channel
             .iter()
