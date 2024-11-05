@@ -7,10 +7,10 @@
 //! This module implements useful functions for the permutation check protocol.
 
 use crate::poly_iop::errors::PolyIOPErrors;
-use arithmetic::identity_permutation_mles;
+use arithmetic::{identity_permutation_mles, start_timer_with_timestamp};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::sync::Arc;
 
 /// Returns the evaluations of two list of MLEs:
@@ -40,7 +40,7 @@ pub(super) fn computer_nums_and_denoms<F: PrimeField>(
     ),
     PolyIOPErrors,
 > {
-    let start = start_timer!(|| "compute numerators and denominators");
+    let start = start_timer_with_timestamp!("compute numerators and denominators");
 
     let num_vars = fxs[0].num_vars;
     let mut numerators = vec![];
@@ -89,7 +89,7 @@ pub(super) fn computer_nums_and_denoms_with_ids<F: PrimeField>(
     ),
     PolyIOPErrors,
 > {
-    let start = start_timer!(|| "compute numerators and denominators");
+    let start = start_timer_with_timestamp!("compute numerators and denominators");
 
     let num_vars = fxs[0].num_vars;
     let mut numerators = vec![];

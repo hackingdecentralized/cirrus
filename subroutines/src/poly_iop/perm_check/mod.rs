@@ -12,10 +12,11 @@ use crate::{
     poly_iop::{errors::PolyIOPErrors, prelude::ProductCheck, PolyIOP},
     MasterProverChannel, MultilinearProverParam, WorkerProverChannel,
 };
+use arithmetic::start_timer_with_timestamp;
 use ark_ec::pairing::Pairing;
 use ark_ff::One;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::sync::Arc;
 use transcript::IOPTranscript;
 use util::computer_nums_and_denoms_with_ids;
@@ -146,8 +147,8 @@ where
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors>;
 
     /// Worker prover protocol of the distributed permutation check. The worker
-    /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ..., gk),
-    /// (id1, ..., idk), and (perm1, ..., permk).
+    /// provers hold their part of the polynomials of (f1, ..., fk), (g1, ...,
+    /// gk), (id1, ..., idk), and (perm1, ..., permk).
     ///
     /// Outputs:
     /// - the prod_worker polynomial
@@ -197,7 +198,7 @@ where
         ),
         PolyIOPErrors,
     > {
-        let start = start_timer!(|| "Permutation check prove");
+        let start = start_timer_with_timestamp!("Permutation check prove");
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
         }
@@ -242,7 +243,7 @@ where
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check verify");
+        let start = start_timer_with_timestamp!("Permutation check verify");
 
         let beta = transcript.get_and_append_challenge(b"beta")?;
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
@@ -281,7 +282,7 @@ where
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::PermutationProof, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check prove master");
+        let start = start_timer_with_timestamp!("Permutation check prove master");
         let log_num_workers = master_channel.log_num_workers();
 
         if num_vars < log_num_workers {
@@ -315,7 +316,10 @@ where
         perms: &[Self::MultilinearExtension],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check prove worker");
+        let start = start_timer_with_timestamp!(format!(
+            "Permutation check prove; worker_id {}",
+            worker_channel.worker_id()
+        ));
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
         }
@@ -369,7 +373,7 @@ where
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::PermutationCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Permutation check verify");
+        let start = start_timer_with_timestamp!("Permutation check verify");
 
         let beta = transcript.get_and_append_challenge(b"beta")?;
         let gamma = transcript.get_and_append_challenge(b"gamma")?;
@@ -395,7 +399,7 @@ where
 mod test {
     use super::{PermutationCheck, PermutationCheckDistributed};
     use crate::{
-        new_master_worker_channels, new_master_worker_thread_channels,
+        new_master_worker_channels,
         pcs::{
             prelude::MultilinearKzgPCS, PolynomialCommitmentScheme,
             PolynomialCommitmentSchemeDistributed,
@@ -497,7 +501,8 @@ mod test {
         let (mut master_channel, worker_channels) =
             new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
-        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) =
+        // new_master_worker_thread_channels(log_num_workers);
         let mut transcript =
             <PolyIOP<E::ScalarField> as PermutationCheck<E, PCS>>::init_transcript();
         transcript.append_message(b"testing", b"initializing transcript for testing")?;

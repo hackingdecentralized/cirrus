@@ -2,20 +2,7 @@
 
 ## Test master prover and worker prover
 
-To run the master prover and worker prover, first run the master prover:
-
-```bash
-> cargo run --bin master <path to srs>
-```
-
-The master prover will generate the srs (reference string) and store it in the file identified by `<path to srs>`.
-
-To start the worker provers, run in two separate terminals:
-
-```bash
-> cargo run --bin worker 0 <path to srs>
-> cargo run --bin worker 1 <path to srs>
-```
+To run the master prover and worker prover, please follow the instructions in `scripts/run.sh`.
 
 ## Disclaimer
 
@@ -23,62 +10,33 @@ To start the worker provers, run in two separate terminals:
 
 ## Development environment setup
 
+Our reference setup is on Ubuntu Noble 24.04 AMD64
+
 ### Install RUST
 
-We recommend using nix for installing the correct version of rust and
-additional libraries:
-
 ```bash
-> curl -L https://nixos.org/nix/install | sh
+> curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+> source ~/.cargo/env
 ```
 
-### Compiling the project for the first time
+## Install Python (Optional)
+
+We recommand MiniConda:
 
 ```bash
-> nix-shell
-> cargo build
+> mkdir -p ~/miniconda3
+> wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+> bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+> rm ~/miniconda3/miniconda.sh
+> source ~/miniconda3/bin/activate
+> conda init --all
 ```
-
-### Direnv
-
-We recommend the following tools:
-
-- [nix](https://nixos.org/download.html)
-- [direnv](https://direnv.net/docs/installation.html)
-
-Run `direnv allow` at the repo root. You should see dependencies (including Rust) being installed (the first time might take a while). 
-Upon modification on `flake.nix`, run `direnv reload` to reflect new dependencies or environment setups.
 
 ### Tests
 
 ```
 > cargo test --release --all
 ```
-
-### Generate and read the documentation
-
-#### Standard
-
-```
-> cargo doc --open
-```
-
-### Code formatting
-
-To format your code run
-
-```
-> cargo fmt
-```
-
-### Updating non-cargo dependencies
-
-Run `nix flake update` if you would like to pin other version edit `flake.nix`
-beforehand. Commit the lock file when happy.
-
-To update only a single input specify it as an argument, for example
-
-    nix flake update github:oxalica/rust-overlay
 
 ### HyperPlonk Benchmarks
 

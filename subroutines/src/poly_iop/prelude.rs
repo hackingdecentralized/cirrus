@@ -9,8 +9,7 @@ pub use crate::poly_iop::{
     perm_check::{PermutationCheck, PermutationCheckDistributed},
     prod_check::ProductCheck,
     structs::IOPProof,
-    sum_check::SumCheck,
-    utils::*,
+    sum_check::{SumCheck, SumCheckDistributed},
     zero_check::{ZeroCheck, ZeroCheckDistributed},
     PolyIOP,
 };

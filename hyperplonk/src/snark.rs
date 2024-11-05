@@ -11,10 +11,10 @@ use crate::{
     witness::WitnessColumn,
     HyperPlonkSNARK,
 };
-use arithmetic::{evaluate_opt, gen_eval_point, VPAuxInfo};
+use arithmetic::{evaluate_opt, gen_eval_point, start_timer_with_timestamp, VPAuxInfo};
 use ark_ec::pairing::Pairing;
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, log2, start_timer, One, Zero};
+use ark_std::{end_timer, log2, One, Zero};
 use rayon::iter::IntoParallelRefIterator;
 #[cfg(feature = "parallel")]
 use rayon::iter::ParallelIterator;
@@ -156,7 +156,7 @@ where
         pub_input: &[E::ScalarField],
         witnesses: &[WitnessColumn<E::ScalarField>],
     ) -> Result<Self::Proof, HyperPlonkErrors> {
-        let start = start_timer!(|| "hyperplonk proving");
+        let start = start_timer_with_timestamp!("hyperplonk proving");
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"hyperplonk");
 
         prover_sanity_check(&pk.params, pub_input, witnesses)?;
@@ -175,7 +175,7 @@ where
         // 1. Commit Witness polynomials `w_i(x)` and append commitment to
         // transcript
         // =======================================================================
-        let step = start_timer!(|| "commit witnesses");
+        let step = start_timer_with_timestamp!("commit witnesses");
 
         let witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> = witnesses
             .iter()
@@ -203,7 +203,7 @@ where
         //
         // in vanilla plonk, and obtain a ZeroCheckSubClaim
         // =======================================================================
-        let step = start_timer!(|| "ZeroCheck on f");
+        let step = start_timer_with_timestamp!("ZeroCheck on f");
 
         let fx = build_f(
             &pk.params.gate_func,
@@ -218,7 +218,7 @@ where
         // 3. Run permutation check on `\{w_i(x)\}` and `permutation_oracle`, and
         // obtain a PermCheckSubClaim.
         // =======================================================================
-        let step = start_timer!(|| "Permutation check on w_i(x)");
+        let step = start_timer_with_timestamp!("Permutation check on w_i(x)");
 
         let (perm_check_proof, prod_x, frac_poly) = <Self as PermutationCheck<E, PCS>>::prove(
             &pk.pcs_param,
@@ -257,7 +257,7 @@ where
         // - 4.4. (deferred) public input consistency checks
         //   - pi_poly(r_pi) where r_pi is sampled from transcript
         // =======================================================================
-        let step = start_timer!(|| "opening and evaluations");
+        let step = start_timer_with_timestamp!("opening and evaluations");
 
         // (perm_check_point[2..n], 0)
         let perm_check_point_0 = [
@@ -337,7 +337,7 @@ where
         // =======================================================================
         // 5. deferred batch opening
         // =======================================================================
-        let step = start_timer!(|| "deferred batch openings prod(x)");
+        let step = start_timer_with_timestamp!("deferred batch openings prod(x)");
         let batch_openings = pcs_acc.multi_open(&pk.pcs_param, &mut transcript)?;
         end_timer!(step);
 
@@ -391,7 +391,7 @@ where
         pub_input: &[E::ScalarField],
         proof: &Self::Proof,
     ) -> Result<bool, HyperPlonkErrors> {
-        let start = start_timer!(|| "hyperplonk verification");
+        let start = start_timer_with_timestamp!("hyperplonk verification");
 
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"hyperplonk");
 
@@ -427,8 +427,7 @@ where
         let pi_eval = proof.batch_openings.f_i_eval_at_point_i.last().unwrap();
 
         // =======================================================================
-        // 1. Verify zero_check_proof on
-        //     `f(q_0(x),...q_l(x), w_0(x),...w_d(x))`
+        // 1. Verify zero_check_proof on `f(q_0(x),...q_l(x), w_0(x),...w_d(x))`
         //
         // where `f` is the constraint polynomial i.e.,
         //
@@ -436,7 +435,7 @@ where
         //     = q_l w_a(x) + q_r w_b(x) + q_m w_a(x)w_b(x) - q_o w_c(x)
         //
         // =======================================================================
-        let step = start_timer!(|| "verify zero check");
+        let step = start_timer_with_timestamp!("verify zero check");
         // Zero check and perm check have different AuxInfo
         let zero_check_aux_info = VPAuxInfo::<E::ScalarField> {
             max_degree: vk.params.gate_func.degree(),
@@ -468,7 +467,7 @@ where
         // =======================================================================
         // 2. Verify perm_check_proof on `\{w_i(x)\}` and `permutation_oracle`
         // =======================================================================
-        let step = start_timer!(|| "verify permutation check");
+        let step = start_timer_with_timestamp!("verify permutation check");
 
         // Zero check and perm check have different AuxInfo
         let perm_check_aux_info = VPAuxInfo::<E::ScalarField> {
@@ -524,7 +523,7 @@ where
         // =======================================================================
         // 3. Verify the opening against the commitment
         // =======================================================================
-        let step = start_timer!(|| "assemble commitments");
+        let step = start_timer_with_timestamp!("assemble commitments");
 
         // generate evaluation points and commitments
         let mut comms = vec![];
@@ -588,7 +587,7 @@ where
         let r_pi = transcript.get_and_append_challenge_vectors(b"r_pi", ell)?;
 
         // check public evaluation
-        let pi_step = start_timer!(|| "check public evaluation");
+        let pi_step = start_timer_with_timestamp!("check public evaluation");
         let pi_poly = DenseMultilinearExtension::from_evaluations_slice(ell, pub_input);
         let expect_pi_eval = evaluate_opt(&pi_poly, &r_pi[..]);
         if expect_pi_eval != *pi_eval {
@@ -605,7 +604,7 @@ where
         end_timer!(pi_step);
 
         end_timer!(step);
-        let step = start_timer!(|| "PCS batch verify");
+        let step = start_timer_with_timestamp!("PCS batch verify");
         // check proof
         let res = PCS::batch_verify(
             &vk.pcs_param,
@@ -649,7 +648,10 @@ mod tests {
         // 2 variables for MLE,
         // 4 wires,
         let gates = CustomizedGates {
-            gates: vec![(1, Some(0), vec![0, 0, 0, 0, 0]), (-1, None, vec![1])],
+            gates: vec![
+                ((false, 1), Some(0), vec![0, 0, 0, 0, 0]),
+                ((true, 1), None, vec![1]),
+            ],
         };
         test_hyperplonk_helper::<Bls12_381>(gates)
     }

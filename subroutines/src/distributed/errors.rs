@@ -18,6 +18,8 @@ pub enum DistributedError {
     MasterListenError,
     /// Worker connect error
     WorkerConnectError,
+    /// Worker id conflict: {0}
+    WorkerIdConflict(usize),
 }
 
 impl From<ark_serialize::SerializationError> for DistributedError {

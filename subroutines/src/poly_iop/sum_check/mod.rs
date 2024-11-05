@@ -14,7 +14,7 @@ use crate::{
     },
     MasterProverChannel, WorkerProverChannel,
 };
-use arithmetic::{VPAuxInfo, VirtualPolynomial};
+use arithmetic::{start_timer_with_timestamp, VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
@@ -183,14 +183,14 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
     type Transcript = IOPTranscript<F>;
 
     fn extract_sum(proof: &Self::SumCheckProof) -> F {
-        let start = start_timer!(|| "extract sum");
+        let start = start_timer_with_timestamp!("extract sum");
         let res = proof.proofs[0].evaluations[0] + proof.proofs[0].evaluations[1];
         end_timer!(start);
         res
     }
 
     fn init_transcript() -> Self::Transcript {
-        let start = start_timer!(|| "init transcript");
+        let start = start_timer_with_timestamp!("init transcript");
         let res = IOPTranscript::<F>::new(b"Initializing SumCheck transcript");
         end_timer!(start);
         res
@@ -200,7 +200,7 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
-        let start = start_timer!(|| "sum check prove");
+        let start = start_timer_with_timestamp!("sum check prove");
 
         transcript.append_serializable_element(b"aux info", &poly.aux_info)?;
 
@@ -232,7 +232,7 @@ impl<F: PrimeField> SumCheck<F> for PolyIOP<F> {
         aux_info: &Self::VPAuxInfo,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::SumCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "sum check verify");
+        let start = start_timer_with_timestamp!("sum check verify");
 
         transcript.append_serializable_element(b"aux info", aux_info)?;
         let mut verifier_state = IOPVerifierState::verifier_init(aux_info);
@@ -261,7 +261,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed sum check; master");
+        let start = start_timer_with_timestamp!("Distributed sum check; master");
 
         transcript.append_serializable_element(b"aux info", poly_aux_info)?;
 
@@ -298,13 +298,13 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         //    their virtual polynomial aux info.
         // 2. Master Prover checks the aux info matches and sends challenges to the
         //    workers sequentially, and workers return the prover messages. Master
-        //    prover aggregates the worker prover messages to form the whole proof
-        //    of the first phase.
+        //    prover aggregates the worker prover messages to form the whole proof of
+        //    the first phase.
         // 3. At the last round, Master Prover sends the final challenge for worker
-        //    provers and worker provers send_uniform the evaluation of each mle at challenge
-        //    point to the master prover.
+        //    provers and worker provers send_uniform the evaluation of each mle at
+        //    challenge point to the master prover.
 
-        let phase1_timer = start_timer!(|| "phase1; master");
+        let phase1_timer = start_timer_with_timestamp!("phase1; master");
         master_channel.send_uniform(b"sum check starting signal")?;
 
         let worker_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
@@ -342,7 +342,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         }
         end_timer!(phase1_timer);
 
-        let construct_poly_timer = start_timer!(|| "construct poly; master");
+        let construct_poly_timer = start_timer_with_timestamp!("construct poly; master");
         master_channel.send_uniform(&challenge)?;
         let flattened_ml_extensions = {
             let evals = master_channel.recv::<Vec<F>>()?;
@@ -369,7 +369,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         //   The master prover generates the proof for the second phase
         //   just as the original sum check protocol.
 
-        let phase2_timer = start_timer!(|| "phase2; master");
+        let phase2_timer = start_timer_with_timestamp!("phase2; master");
         challenge = None;
 
         // special situation: only one worker prover
@@ -405,14 +405,20 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         poly: &Self::VirtualPolynomial,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed sum check; worker");
+        let start = start_timer_with_timestamp!(format!(
+            "Distributed sum check; worker_id {}",
+            worker_channel.worker_id()
+        ));
         let start_data: [u8; 25] = worker_channel.recv()?;
         if &start_data != b"sum check starting signal" {
             return Err(PolyIOPErrors::InvalidDistributedMessage);
         }
         worker_channel.send(&poly.aux_info)?;
 
-        let phase1_timer = start_timer!(|| "phase1; worker");
+        let phase1_timer = start_timer_with_timestamp!(format!(
+            "phase1; worker_id {}",
+            worker_channel.worker_id()
+        ));
         let mut challenge = worker_channel.recv()?;
 
         // special situation: worker got a constant polynomial
@@ -430,16 +436,18 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
         let mut prover_state = IOPProverState::prover_init(poly)?;
 
-        for i in 0..poly.aux_info.num_variables {
+        for _ in 0..poly.aux_info.num_variables {
             let prover_msg =
                 IOPProverState::prove_round_and_update_state(&mut prover_state, &challenge)?;
             worker_channel.send(&prover_msg)?;
-            // dbg!(format!("round {}, worker {}", i, worker_channel.worker_id()));
             challenge = worker_channel.recv()?;
         }
 
         end_timer!(phase1_timer);
-        let construct_poly_timer = start_timer!(|| "construct poly; worker");
+        let construct_poly_timer = start_timer_with_timestamp!(format!(
+            "construct poly; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let challenge = challenge.unwrap();
         let evaluations = prover_state
@@ -465,15 +473,12 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 mod test {
 
     use crate::new_master_worker_channels;
-    use crate::new_master_worker_thread_channels;
 
     use super::*;
     use ark_bls12_381::Fr;
     use ark_ff::UniformRand;
     use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
     use ark_std::test_rng;
-    use std::net::TcpListener;
-    use std::thread;
     use std::{sync::Arc, thread::spawn};
 
     fn test_sumcheck(
@@ -567,7 +572,7 @@ mod test {
         let worker_handles = worker_channels
             .into_iter()
             .zip(distributed_poly)
-            .map(|(mut ch, poly)| {
+            .map(|(ch, poly)| {
                 (
                     ch,
                     poly.aux_info,

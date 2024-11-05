@@ -1,9 +1,17 @@
 use super::{prelude::DistributedError, MasterProverChannel, WorkerProverChannel};
+use arithmetic::start_timer_with_timestamp;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use ark_std::end_timer;
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+};
 
-// Structs for the Master and Worker channels using persistent socket connections
+// Structs for the Master and Worker channels using persistent socket
+// connections
 pub struct MasterProverChannelSocket {
     pub log_num_workers: usize,
     pub worker_sockets: Vec<TcpStream>, // Stores accepted worker connections
@@ -15,7 +23,8 @@ pub struct WorkerProverChannelSocket {
 }
 
 impl MasterProverChannelSocket {
-    /// Creates a new MasterProverChannelSocket and connects to the specified number of workers.
+    /// Creates a new MasterProverChannelSocket and connects to the specified
+    /// number of workers.
     pub fn new(log_num_workers: usize) -> Self {
         MasterProverChannelSocket {
             log_num_workers,
@@ -23,39 +32,80 @@ impl MasterProverChannelSocket {
         }
     }
 
-    /// Accepts connections from workers and populates the worker_sockets vector.
+    /// Accepts connections from workers and populates the worker_sockets
+    /// vector.
     pub fn connect_workers(&mut self, master_addr: &str) -> Result<(), DistributedError> {
         let listener =
             TcpListener::bind(master_addr).map_err(|_| DistributedError::MasterListenError)?;
         println!("Master listening on {}", master_addr);
 
         let expected_workers = 1 << self.log_num_workers;
-        for _ in 0..expected_workers {
-            let (socket, addr) = listener
+
+        let mut socket_storage = Vec::new();
+        let mut permutation = vec![usize::MAX; expected_workers];
+
+        for i in 0..expected_workers {
+            let (mut socket, addr) = listener
                 .accept()
                 .map_err(|_| DistributedError::MasterListenError)?;
-            println!("Accepted connection from worker at {}", addr);
-            self.worker_sockets.push(socket);
+
+            let mut worker_id_buf = [0u8; 8];
+            socket
+                .read_exact(&mut worker_id_buf)
+                .map_err(|_| DistributedError::MasterListenError)?;
+            let worker_id = u64::from_le_bytes(worker_id_buf) as usize;
+            if permutation[worker_id] != usize::MAX {
+                return Err(DistributedError::WorkerIdConflict(worker_id));
+            }
+
+            println!("Accepted connection from worker_id {} at {}", worker_id, addr);
+
+            socket_storage.push(socket);
+            permutation[worker_id] = i;
         }
+
+        self.worker_sockets = permutation
+            .into_iter()
+            .map(|i| socket_storage[i].try_clone().unwrap())
+            .collect();
+
+        let start_msg = [1u8];
+        self.worker_sockets
+            .par_iter_mut()
+            .map(|socket| {
+                socket
+                    .write_all(&start_msg)
+                    .map_err(|_| DistributedError::MasterListenError)
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
 
         Ok(())
     }
 }
 
-// pub fn new_master_channel(
-//     log_num_workers: usize,
-//     master_addr: &str
-// ) -> MasterProverChannelSocket {
-
-// }
-
 // Implement MasterProverChannel for MasterProverChannelSocket
 impl MasterProverChannel for MasterProverChannelSocket {
     fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+        let start = start_timer_with_timestamp!("MasterProverChannel::send_uniform");
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
 
+        #[cfg(feature = "parallel")]
+        self.worker_sockets
+            .par_iter_mut()
+            .map(|worker_socket| {
+                let msg_len = (serialized_msg.len() as u64).to_le_bytes();
+                worker_socket
+                    .write_all(&msg_len)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+                worker_socket
+                    .write_all(&serialized_msg)
+                    .map_err(|_| DistributedError::MasterSendError)
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
+
+        #[cfg(not(feature = "parallel"))]
         for worker_socket in &self.worker_sockets {
             let mut socket = worker_socket
                 .try_clone()
@@ -70,6 +120,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
                 .map_err(|_| DistributedError::MasterSendError)?;
         }
 
+        end_timer!(start);
         Ok(())
     }
 
@@ -77,10 +128,33 @@ impl MasterProverChannel for MasterProverChannelSocket {
         &mut self,
         msgs: Vec<T>,
     ) -> Result<(), DistributedError> {
+        let start = start_timer_with_timestamp!("MasterProverChannel::send_different");
         if msgs.len() != self.worker_sockets.len() {
             return Err(DistributedError::MasterSendError);
         }
 
+        #[cfg(feature = "parallel")]
+        self.worker_sockets
+            .par_iter_mut()
+            .zip(msgs.into_par_iter())
+            .map(|(worker_socket, msg)| {
+                let mut serialized_msg = Vec::new();
+                msg.serialize_compressed(&mut serialized_msg)
+                    .map_err(DistributedError::from)?;
+
+                let msg_len = (serialized_msg.len() as u64).to_le_bytes();
+                worker_socket
+                    .write_all(&msg_len)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+                worker_socket
+                    .write_all(&serialized_msg)
+                    .map_err(|_| DistributedError::MasterSendError)?;
+
+                Ok(())
+            })
+            .collect::<Result<Vec<_>, DistributedError>>()?;
+
+        #[cfg(not(feature = "parallel"))]
         for (i, worker_socket) in self.worker_sockets.iter().enumerate() {
             let mut serialized_msg = Vec::new();
             msgs[i]
@@ -100,12 +174,42 @@ impl MasterProverChannel for MasterProverChannelSocket {
                 .map_err(|_| DistributedError::MasterSendError)?;
         }
 
+        end_timer!(start);
         Ok(())
     }
 
     fn recv<T: CanonicalDeserialize + Send>(&mut self) -> Result<Vec<T>, DistributedError> {
-        let mut results = Vec::new();
+        let start = start_timer_with_timestamp!("MasterProverChannel::recv");
 
+        #[cfg(feature = "parallel")]
+        let results = rayon::ThreadPoolBuilder::default()
+            .build()
+            .unwrap()
+            .install(|| {
+                self.worker_sockets
+                    .par_iter_mut()
+                    .map(|worker_socket| {
+                        let mut len_buf = [0u8; 8];
+                        worker_socket
+                            .read_exact(&mut len_buf)
+                            .map_err(|_| DistributedError::MasterRecvError)?;
+                        let msg_len = u64::from_le_bytes(len_buf) as usize;
+
+                        let mut buffer = vec![0; msg_len];
+                        worker_socket
+                            .read_exact(&mut buffer)
+                            .map_err(|_| DistributedError::MasterRecvError)?;
+
+                        let msg = T::deserialize_compressed(&buffer[..])
+                            .map_err(DistributedError::from)?;
+                        Ok(msg)
+                    })
+                    .collect::<Result<Vec<T>, DistributedError>>()
+            })?;
+
+        #[cfg(not(feature = "parallel"))]
+        let mut results = Vec::new();
+        #[cfg(not(feature = "parallel"))]
         for worker_socket in &self.worker_sockets {
             let mut socket = worker_socket
                 .try_clone()
@@ -126,6 +230,7 @@ impl MasterProverChannel for MasterProverChannelSocket {
             results.push(msg);
         }
 
+        end_timer!(start);
         Ok(results)
     }
 
@@ -134,34 +239,67 @@ impl MasterProverChannel for MasterProverChannelSocket {
     }
 }
 
-// Implement WorkerProverChannel for WorkerProverChannelSocket with send and recv
+impl WorkerProverChannelSocket {
+    /// Creates a new WorkerProverChannelSocket and connects to the master at
+    /// the specified address.
+    pub fn bind(master_addr: &str, worker_id: usize) -> Result<Self, DistributedError> {
+        let mut socket =
+            TcpStream::connect(master_addr).map_err(|_| DistributedError::WorkerConnectError)?;
+
+        // Send worker ID to the master
+        let msg: [u8; 8] = (worker_id as u64).to_le_bytes();
+        socket
+            .write_all(&msg)
+            .map_err(|_| DistributedError::WorkerConnectError)?;
+
+        // Receive start message from the master
+        let mut start_msg = [0u8; 1];
+        socket
+            .read_exact(&mut start_msg)
+            .map_err(|_| DistributedError::WorkerConnectError)?;
+
+        if start_msg[0] != 1 {
+            return Err(DistributedError::WorkerConnectError);
+        }
+
+        Ok(WorkerProverChannelSocket { worker_id, socket })
+    }
+}
+
+// Implement WorkerProverChannel for WorkerProverChannelSocket with send and
+// recv
 impl WorkerProverChannel for WorkerProverChannelSocket {
     fn send(&mut self, msg: &(impl CanonicalSerialize + Send)) -> Result<(), DistributedError> {
+        let start = start_timer_with_timestamp!(format!(
+            "WorkerProverChannel::send; worker_id {}",
+            self.worker_id
+        ));
+
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
 
         let msg_len = (serialized_msg.len() as u64).to_le_bytes();
 
-        let mut socket = self
-            .socket
-            .try_clone()
-            .map_err(|_| DistributedError::WorkerSendError)?;
-
         // Send message length to the master's socket
-        socket
+        self.socket
             .write_all(&msg_len)
             .map_err(|_| DistributedError::WorkerSendError)?;
 
         // Send the actual message to the master's socket
-        socket
+        self.socket
             .write_all(&serialized_msg)
             .map_err(|_| DistributedError::WorkerSendError)?;
 
+        end_timer!(start);
         Ok(())
     }
 
     fn recv<T: CanonicalDeserialize>(&mut self) -> Result<T, DistributedError> {
+        let start = start_timer_with_timestamp!(format!(
+            "WorkerProverChannel::recv; worker_id {}",
+            self.worker_id
+        ));
         let mut socket = self
             .socket
             .try_clone()
@@ -181,6 +319,8 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
             .map_err(|_| DistributedError::WorkerRecvError)?;
 
         let msg = T::deserialize_compressed(&buffer[..]).map_err(DistributedError::from)?;
+
+        end_timer!(start);
         Ok(msg)
     }
 
@@ -189,7 +329,8 @@ impl WorkerProverChannel for WorkerProverChannelSocket {
     }
 }
 
-// Function to initialize Master and Worker channels with Master as a listening server
+// Function to initialize Master and Worker channels with Master as a listening
+// server
 pub fn new_master_worker_socket_channels(
     log_num_workers: usize,
     master_addr: &str,
@@ -230,48 +371,16 @@ pub fn new_master_worker_socket_channels(
 mod tests {
     use super::*;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-    use std::net::{TcpListener, TcpStream};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
+    use std::{
+        sync::{Arc, Mutex},
+        thread,
+    };
     // use std::time::Duration;
 
     // Mock message struct for serialization/deserialization
     #[derive(CanonicalSerialize, CanonicalDeserialize, PartialEq, Debug, Clone)]
     struct TestMessage {
         data: u64,
-    }
-
-    // Helper function to start a listener for the master channel and accept worker connections
-    fn setup_master_and_worker_channels(
-        num_workers: usize,
-    ) -> (MasterProverChannelSocket, Vec<WorkerProverChannelSocket>) {
-        let master_addr = "127.0.0.1:0"; // Bind to an available port
-        let listener = TcpListener::bind(master_addr).expect("Failed to bind listener");
-        let master_socket_addr = listener.local_addr().expect("Failed to get local address");
-
-        let worker_channels: Vec<WorkerProverChannelSocket> = (0..num_workers)
-            .map(|worker_id| {
-                let socket = TcpStream::connect(master_socket_addr)
-                    .expect("Failed to connect worker to master");
-                WorkerProverChannelSocket { worker_id, socket }
-            })
-            .collect();
-
-        // Accept incoming worker connections in master
-        let mut worker_sockets = Vec::new();
-        for _ in 0..num_workers {
-            let (socket, _addr) = listener
-                .accept()
-                .expect("Failed to accept worker connection");
-            worker_sockets.push(socket);
-        }
-
-        let master_channel = MasterProverChannelSocket {
-            log_num_workers: num_workers,
-            worker_sockets,
-        };
-
-        (master_channel, worker_channels)
     }
 
     #[test]
@@ -366,8 +475,7 @@ mod tests {
 
     #[test]
     fn test_multithreaded_worker_communication() {
-        let (mut master_channel, worker_channels) =
-            new_master_worker_socket_channels(2, "127.0.0.1:0");
+        let (master_channel, worker_channels) = new_master_worker_socket_channels(2, "127.0.0.1:0");
 
         let worker_channels = Arc::new(Mutex::new(worker_channels));
         let master_channel = Arc::new(Mutex::new(master_channel));
@@ -395,7 +503,7 @@ mod tests {
 
                 thread::spawn(move || {
                     let mut workers = worker_channels.lock().unwrap();
-                    let mut worker = &mut workers[worker_id];
+                    let worker = &mut workers[worker_id];
                     worker
                         .send(&message)
                         .expect("Failed to send message to master");
@@ -411,7 +519,7 @@ mod tests {
 
                 thread::spawn(move || {
                     let mut workers = worker_channels.lock().unwrap();
-                    let mut worker = &mut workers[worker_id];
+                    let worker = &mut workers[worker_id];
                     let received_msg: TestMessage = worker
                         .recv()
                         .expect("Failed to receive message from master");

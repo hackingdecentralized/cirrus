@@ -7,16 +7,19 @@
 //! This module defines our main mathematical object `VirtualPolynomial`; and
 //! various functions associated with it.
 
-use crate::{errors::ArithErrors, multilinear_polynomial::random_zero_mle_list, random_mle_list};
+use crate::{
+    errors::ArithErrors, multilinear_polynomial::random_zero_mle_list, random_mle_list,
+    start_timer_with_timestamp,
+};
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     end_timer,
     rand::{Rng, RngCore},
-    start_timer,
 };
-use rayon::prelude::*;
+#[cfg(feature = "parallel")]
+use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{cmp::max, collections::HashMap, marker::PhantomData, ops::Add, sync::Arc};
 
 #[rustfmt::skip]
@@ -74,7 +77,7 @@ pub struct VPAuxInfo<F: PrimeField> {
 impl<F: PrimeField> Add for &VirtualPolynomial<F> {
     type Output = VirtualPolynomial<F>;
     fn add(self, other: &VirtualPolynomial<F>) -> Self::Output {
-        let start = start_timer!(|| "virtual poly add");
+        let start = start_timer_with_timestamp!("virtual poly add");
         let mut res = self.clone();
         for products in other.products.iter() {
             let cur: Vec<Arc<DenseMultilinearExtension<F>>> = products
@@ -193,7 +196,7 @@ impl<F: PrimeField> VirtualPolynomial<F> {
         mle: Arc<DenseMultilinearExtension<F>>,
         coefficient: F,
     ) -> Result<(), ArithErrors> {
-        let start = start_timer!(|| "mul by mle");
+        let start = start_timer_with_timestamp!("mul by mle");
 
         if mle.num_vars != self.aux_info.num_variables {
             return Err(ArithErrors::InvalidParameters(format!(
@@ -231,7 +234,7 @@ impl<F: PrimeField> VirtualPolynomial<F> {
     /// Evaluate the virtual polynomial at point `point`.
     /// Returns an error is point.len() does not match `num_variables`.
     pub fn evaluate(&self, point: &[F]) -> Result<F, ArithErrors> {
-        let start = start_timer!(|| "evaluation");
+        let start = start_timer_with_timestamp!("evaluation");
 
         if self.aux_info.num_variables != point.len() {
             return Err(ArithErrors::InvalidParameters(format!(
@@ -268,7 +271,7 @@ impl<F: PrimeField> VirtualPolynomial<F> {
         num_products: usize,
         rng: &mut R,
     ) -> Result<(Self, F), ArithErrors> {
-        let start = start_timer!(|| "sample random virtual polynomial");
+        let start = start_timer_with_timestamp!("sample random virtual polynomial");
 
         let mut sum = F::zero();
         let mut poly = VirtualPolynomial::new(nv);
@@ -355,7 +358,7 @@ impl<F: PrimeField> VirtualPolynomial<F> {
     //
     // This function is used in ZeroCheck.
     pub fn build_f_hat(&self, r: &[F]) -> Result<Self, ArithErrors> {
-        let start = start_timer!(|| "zero check build hat f");
+        let start = start_timer_with_timestamp!("zero check build hat f");
 
         if self.aux_info.num_variables != r.len() {
             return Err(ArithErrors::InvalidParameters(format!(
@@ -394,7 +397,7 @@ pub fn eq_eval<F: PrimeField>(x: &[F], y: &[F]) -> Result<F, ArithErrors> {
             "x and y have different length".to_string(),
         ));
     }
-    let start = start_timer!(|| "eq_eval");
+    let start = start_timer_with_timestamp!("eq_eval");
     let mut res = F::one();
     for (&xi, &yi) in x.iter().zip(y.iter()) {
         let xi_yi = xi * yi;
@@ -469,6 +472,18 @@ fn build_eq_x_r_helper<F: PrimeField>(r: &[F], buf: &mut Vec<F>) -> Result<(), A
         // *buf = res;
 
         let mut res = vec![F::zero(); buf.len() << 1];
+        #[cfg(not(feature = "parallel"))]
+        for (i, val) in buf.iter().enumerate() {
+            let bi = *val;
+            let tmp = r[0] * bi;
+            if i & 1 == 0 {
+                res[i] = bi - tmp;
+            } else {
+                res[i] = tmp;
+            }
+        }
+
+        #[cfg(feature = "parallel")]
         res.par_iter_mut().enumerate().for_each(|(i, val)| {
             let bi = buf[i >> 1];
             let tmp = r[0] * bi;

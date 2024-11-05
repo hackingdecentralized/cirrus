@@ -11,10 +11,10 @@ use crate::poly_iop::{
     errors::PolyIOPErrors,
     structs::{IOPProverMessage, IOPProverState},
 };
-use arithmetic::{fix_variables, VirtualPolynomial};
+use arithmetic::{fix_variables, start_timer_with_timestamp, VirtualPolynomial};
 use ark_ff::{batch_inversion, PrimeField};
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{cfg_into_iter, end_timer, start_timer, vec::Vec};
+use ark_std::{cfg_into_iter, end_timer, vec::Vec};
 use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator};
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ impl<F: PrimeField> SumCheckProver<F> for IOPProverState<F> {
     /// Initialize the prover state to argue for the sum of the input polynomial
     /// over {0,1}^`num_vars`.
     fn prover_init(polynomial: &Self::VirtualPolynomial) -> Result<Self, PolyIOPErrors> {
-        let start = start_timer!(|| "sum check prover init");
+        let start = start_timer_with_timestamp!("sum check prover init");
         if polynomial.aux_info.num_variables == 0 {
             return Err(PolyIOPErrors::InvalidParameters(
                 "Attempt to prove a constant.".to_string(),
@@ -59,8 +59,8 @@ impl<F: PrimeField> SumCheckProver<F> for IOPProverState<F> {
         challenge: &Option<F>,
     ) -> Result<Self::ProverMessage, PolyIOPErrors> {
         // let start =
-        //     start_timer!(|| format!("sum check prove {}-th round and update state",
-        // self.round));
+        //     start_timer_with_timestamp!(format!("sum check prove {}-th round and
+        // update state", self.round));
 
         if self.round >= self.poly.aux_info.num_variables {
             return Err(PolyIOPErrors::InvalidProver(
@@ -68,7 +68,7 @@ impl<F: PrimeField> SumCheckProver<F> for IOPProverState<F> {
             ));
         }
 
-        // let fix_argument = start_timer!(|| "fix argument");
+        // let fix_argument = start_timer_with_timestamp!("fix argument");
 
         // Step 1:
         // fix argument and evaluate f(x) over x_m = r; where r is the challenge

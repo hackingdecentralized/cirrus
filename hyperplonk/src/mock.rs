@@ -6,6 +6,7 @@
 
 use arithmetic::identity_permutation;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{log2, test_rng};
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     witness::WitnessColumn,
 };
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct MockCircuit<F: PrimeField> {
     pub public_inputs: Vec<F>,
     pub witnesses: Vec<WitnessColumn<F>>,
@@ -57,12 +59,12 @@ impl<F: PrimeField> MockCircuit<F> {
                 .collect();
             let cur_witness: Vec<F> = (0..num_witnesses).map(|_| F::rand(&mut rng)).collect();
             let mut last_selector = F::zero();
-            for (index, (coeff, q, wit)) in gate.gates.iter().enumerate() {
+            for (index, ((sign, coeff), q, wit)) in gate.gates.iter().enumerate() {
                 if index != num_selectors - 1 {
-                    let mut cur_monomial = if *coeff < 0 {
-                        -F::from((-coeff) as u64)
+                    let mut cur_monomial = if *sign {
+                        -F::from(*coeff)
                     } else {
-                        F::from(*coeff as u64)
+                        F::from(*coeff)
                     };
                     cur_monomial = match q {
                         Some(p) => cur_monomial * cur_selectors[*p],
@@ -73,10 +75,10 @@ impl<F: PrimeField> MockCircuit<F> {
                     }
                     last_selector += cur_monomial;
                 } else {
-                    let mut cur_monomial = if *coeff < 0 {
-                        -F::from((-coeff) as u64)
+                    let mut cur_monomial = if *sign {
+                        -F::from(*coeff)
                     } else {
-                        F::from(*coeff as u64)
+                        F::from(*coeff)
                     };
                     for wit_index in wit.iter() {
                         cur_monomial *= cur_witness[*wit_index];
@@ -118,11 +120,11 @@ impl<F: PrimeField> MockCircuit<F> {
     pub fn is_satisfied(&self) -> bool {
         for current_row in 0..self.num_variables() {
             let mut cur = F::zero();
-            for (coeff, q, wit) in self.index.params.gate_func.gates.iter() {
-                let mut cur_monomial = if *coeff < 0 {
-                    -F::from((-coeff) as u64)
+            for ((sign, coeff), q, wit) in self.index.params.gate_func.gates.iter() {
+                let mut cur_monomial = if *sign {
+                    -F::from(*coeff)
                 } else {
-                    F::from(*coeff as u64)
+                    F::from(*coeff)
                 };
                 cur_monomial = match q {
                     Some(p) => cur_monomial * self.index.selectors[*p].0[current_row],

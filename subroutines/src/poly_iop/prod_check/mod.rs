@@ -16,11 +16,11 @@ use crate::{
     },
     MasterProverChannel, MultilinearProverParam, WorkerProverChannel,
 };
-use arithmetic::{get_index, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{get_index, start_timer_with_timestamp, VPAuxInfo, VirtualPolynomial};
 use ark_ec::pairing::Pairing;
 use ark_ff::{One, PrimeField, Zero};
 use ark_poly::DenseMultilinearExtension;
-use ark_std::{end_timer, start_timer};
+use ark_std::end_timer;
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
 
@@ -146,36 +146,46 @@ pub struct ProductCheckProof<
     pub frac_comm: PCS::Commitment,
 }
 
-/// A distributed version of ProductCheck protocol generates a product check proof for
-/// the product of two lists of n-variate multilinear polynomials `(f1, f2, ..., fk)`
-/// and `(g1, ..., gk)` satisfying:
-///  \prod_{x \in {0,1}^n} f1(x) * ... * fk(x) = \prod_{x \in {0,1}^n} g1(x) * ... * gk(x)
+/// A distributed version of ProductCheck protocol generates a product check
+/// proof for the product of two lists of n-variate multilinear polynomials
+/// `(f1, f2, ..., fk)` and `(g1, ..., gk)` satisfying:
+///  \prod_{x \in {0,1}^n} f1(x) * ... * fk(x) = \prod_{x \in {0,1}^n} g1(x) *
+/// ... * gk(x)
 ///
-/// The distributed version of ProductCheck gives a different proof structure than the
-/// non-distributed version, because the Quark system for original product check isn't
-/// easily distributed. The proof is different for the same problem when the number of
-/// workers is different.
+/// The distributed version of ProductCheck gives a different proof structure
+/// than the non-distributed version, because the Quark system for original
+/// product check isn't easily distributed. The proof is different for the same
+/// problem when the number of workers is different.
 ///
 /// Prover steps:
-/// 1. The worker provers build MLE `frac(x)` s.t. `frac(x) = f1(x) * ... * fk(x) / (g1(x) * ... * gk(x))`
-/// distributedly, as each worker prover holds part of `f1, ... fk, g1, ..., gk`.
-/// 2. The worker provers build MLE `prod_worker(x)` from their part of `frac(x)`.
+/// 1. The worker provers build MLE `frac(x)` s.t. `frac(x) = f1(x) * ... *
+///    fk(x) / (g1(x) * ... * gk(x))`
+/// distributedly, as each worker prover holds part of `f1, ... fk, g1, ...,
+/// gk`.
+/// 2. The worker provers build MLE `prod_worker(x)` from their part of
+///    `frac(x)`.
 /// They send_uniform the result of product to the master prover.
-/// 3. The master prover builds MLE `prod_master(x)` from the product of `prod_worker(x)`s.
-/// 4. All provers collaboratively compute the commitments for `frac(x)`, `prod_worker(x)`,
+/// 3. The master prover builds MLE `prod_master(x)` from the product of
+///    `prod_worker(x)`s.
+/// 4. All provers collaboratively compute the commitments for `frac(x)`,
+///    `prod_worker(x)`,
 /// and `prod_master(x)`.
-/// 5. The master prover submits the commitments to the transcript and generates two
+/// 5. The master prover submits the commitments to the transcript and generates
+///    two
 /// challenges `alpha0` and `alpha1`.
-/// 6. The provers collaboratively build the virtual polynomial `Q(x)` and generate
+/// 6. The provers collaboratively build the virtual polynomial `Q(x)` and
+///    generate
 /// the zero-check proof.
 ///     Q(x) = frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
 ///          + alpha0 * (prod_worker(x) - p1_worker(x) * p2_worker(x))
 ///          + alpha1 * (prod_master(x) - p1_master(x) * p2_master(x))
 ///     where
-///         p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
-///         p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
-///         p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 0)
-///         p2_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
+///         p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 *
+/// prod_master(x_2..t, 0, x_t+1..n)         p2_master(x) = (1-x1) *
+/// prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
+///         p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} *
+/// prod_worker(x_1..t, x_{t+2}..n, 0)         p2_worker(x) = (1-x_{t+1}) *
+/// frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
 ///         t = log2(num_workers)
 /// 7. The master prover constructs the final proof for product check.
 ///
@@ -277,7 +287,7 @@ where
         ),
         PolyIOPErrors,
     > {
-        let start = start_timer!(|| "prod_check prove");
+        let start = start_timer_with_timestamp!("prod_check prove");
 
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
@@ -330,7 +340,7 @@ where
         aux_info: &VPAuxInfo<E::ScalarField>,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "prod_check verify");
+        let start = start_timer_with_timestamp!("prod_check verify");
 
         // update transcript and generate challenge
         transcript.append_serializable_element(b"frac(x)", &proof.frac_comm)?;
@@ -383,11 +393,11 @@ where
         transcript: &mut Self::Transcript,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::ProductCheckProof, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed prod check; master");
+        let start = start_timer_with_timestamp!("Distributed prod check; master");
         let log_num_workers = master_channel.log_num_workers();
 
-        let preparation = start_timer!(|| "Distributed prod check preparation; master");
-        master_channel.send_uniform(b"prod check starting signal")?;
+        let preparation =
+            start_timer_with_timestamp!("Distributed prod check preparation; master");
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
         let prod_master = compute_product_poly(&Arc::new(
             DenseMultilinearExtension::from_evaluations_vec(log_num_workers, sub_prod.clone()),
@@ -408,12 +418,10 @@ where
         // build the zero-check proof
         //   frac(x) * g1(x) * ... * gk(x)
         // - f1(x) * ... * fk(x)
-        // + alpha[0] * (
-        //     prod_worker(x)
+        // + alpha[0] * ( prod_worker(x)
         //   - p1_worker(x) * p2_worker(x)
         // )
-        // + alpha[1] * (
-        //      prod_master(x)
+        // + alpha[1] * ( prod_master(x)
         //   - p1_master(x) * p2_master(x)
         // )
 
@@ -478,8 +486,14 @@ where
         gxs: &[Self::MultilinearExtension],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
-        let start = start_timer!(|| "Distribution product check; prover");
-        let preparation = start_timer!(|| "Distribution product check preparation; prover");
+        let start = start_timer_with_timestamp!(format!(
+            "Distribution product check; worker_id {}",
+            worker_channel.worker_id()
+        ));
+        let preparation = start_timer_with_timestamp!(format!(
+            "Distribution product check preparation; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         if fxs.is_empty() {
             return Err(PolyIOPErrors::InvalidParameters("fxs is empty".to_string()));
@@ -497,11 +511,6 @@ where
                     "fx and gx have different number of variables".to_string(),
                 ));
             }
-        }
-
-        let start_data: [u8; 26] = worker_channel.recv()?;
-        if &start_data != b"prod check starting signal" {
-            return Err(PolyIOPErrors::InvalidDistributedMessage);
         }
 
         // compute the fractional polynomial frac_p s.t.
@@ -606,7 +615,7 @@ where
         aux_info: &VPAuxInfo<<E as Pairing>::ScalarField>,
         transcript: &mut Self::Transcript,
     ) -> Result<Self::ProductCheckSubClaim, PolyIOPErrors> {
-        let start = start_timer!(|| "Distributed prod check; verifier");
+        let start = start_timer_with_timestamp!("Distributed prod check; verifier");
 
         // update transcript and generate challenge
         transcript.append_serializable_element(b"frac(x)", &proof.frac_comm)?;
@@ -643,7 +652,7 @@ where
 mod test {
     use super::{ProductCheck, ProductCheckDistributed};
     use crate::{
-        new_master_worker_channels, new_master_worker_thread_channels,
+        new_master_worker_channels,
         pcs::{
             prelude::MultilinearKzgPCS, PolynomialCommitmentScheme,
             PolynomialCommitmentSchemeDistributed,
@@ -780,7 +789,8 @@ mod test {
 
         let (mut master_channel, worker_channels) =
             new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
-        // let (mut master_channel, worker_channels) = new_master_worker_thread_channels(log_num_workers);
+        // let (mut master_channel, worker_channels) =
+        // new_master_worker_thread_channels(log_num_workers);
 
         let mut transcript = <PolyIOP<E::ScalarField> as ProductCheck<E, PCS>>::init_transcript();
         let num_polys = fs[0].len();

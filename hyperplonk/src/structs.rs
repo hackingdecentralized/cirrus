@@ -10,6 +10,7 @@ use crate::{custom_gate::CustomizedGates, prelude::HyperPlonkErrors, selectors::
 use ark_ec::pairing::Pairing;
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::log2;
 use std::sync::Arc;
 use subroutines::{
@@ -46,7 +47,7 @@ where
 ///   - the number of constraints
 ///   - number of public input columns
 ///   - the customized gate function
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkParams {
     /// the number of constraints
     pub num_constraints: usize,
@@ -99,7 +100,7 @@ impl HyperPlonkParams {
 ///   - HyperPlonk parameters
 ///   - the wire permutation
 ///   - the selector vectors
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkIndex<F: PrimeField> {
     pub params: HyperPlonkParams,
     pub permutation: Vec<F>,
@@ -148,7 +149,7 @@ pub struct HyperPlonkProvingKey<E: Pairing, PCS: PolynomialCommitmentScheme<E>> 
 ///   - the hyperplonk instance parameters
 ///   - the commitments to the preprocessed polynomials output by the indexer
 ///   - the parameters for polynomial commitment
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkVerifyingKey<E: Pairing, PCS: PolynomialCommitmentScheme<E>> {
     /// Hyperplonk instance parameters
     pub params: HyperPlonkParams,
@@ -168,26 +169,25 @@ where
     PC: PermutationCheckDistributed<E, PCS>,
 {
     pub witness_commits: Vec<PCS::Commitment>,
-    // TODO
-    // pub batch_openings: PCS::BatchProof,
-    pub evaluations: Vec<PCS::Evaluation>,
+    pub batch_openings: PCS::BatchProof,
     pub zero_check_proof: <PC as ZeroCheck<E::ScalarField>>::ZeroCheckProof,
     pub perm_check_proof: PC::PermutationProof,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkProvingKeyMaster<E, PCS>
 where
     E: Pairing,
     PCS: PolynomialCommitmentSchemeDistributed<E>,
 {
+    pub log_num_workers: usize,
     pub params: HyperPlonkParams,
     pub selector_commitments: Vec<PCS::Commitment>,
     pub permutation_commitments: Vec<PCS::Commitment>,
     pub pcs_param: PCS::MasterProverParam,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyperPlonkProvingKeyWorker<E, PCS>
 where
     E: Pairing,

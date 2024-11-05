@@ -105,8 +105,8 @@ where
     /// - `pcs_srs`: Polynomial commitment structured reference string
     ///
     /// Outputs:
-    /// - The distributed HyperPlonk proving key, which is a tuple of
-    ///   the master proving key and a vector of worker proving keys.
+    /// - The distributed HyperPlonk proving key, which is a tuple of the master
+    ///   proving key and a vector of worker proving keys.
     /// - The HyperPlonk verifying key(distributed version).
     fn preprocess(
         index: &Self::Index,

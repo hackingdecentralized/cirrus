@@ -134,29 +134,38 @@ pub trait PolynomialCommitmentScheme<E: Pairing> {
 }
 
 pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmentScheme<E> {
-    type MasterProverParam: Clone + Sync;
-    type WorkerProverParam: Clone + Sync;
+    type MasterProverParam: Clone + Sync + CanonicalSerialize + CanonicalDeserialize;
+    type WorkerProverParam: Clone + Sync + CanonicalSerialize + CanonicalDeserialize;
 
     type MasterPolynomialHandle: Clone + Debug + PartialEq + Eq;
     type WorkerPolynomialHandle: Clone + Debug + PartialEq + Eq;
 
+    /// Distribute the prover parameter into master and worker parameters.
+    /// Arguments:
+    /// - `prover_param`: the prover parameter to be distributed, returned
+    /// from trim.
+    /// - `log_num_workers`: the log of the number of workers.
     fn prover_param_distributed(
         prover_param: Self::ProverParam,
         log_num_workers: usize,
     ) -> Result<(Self::MasterProverParam, Vec<Self::WorkerProverParam>), PCSError>;
 
+    /// Commit a polynomial distributedly on the master side.
     fn commit_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::Commitment, PCSError>;
 
+    /// Commit a polynomial distributedly on the worker side.
     fn commit_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError>;
 
+    /// Generates a proof for the evaluation at `point` of the polynomial
+    /// distributedly on the master side.
     fn open_distributed_master(
         master_prover_param: impl Borrow<Self::MasterProverParam>,
         handle: &Self::MasterPolynomialHandle,
@@ -164,11 +173,43 @@ pub trait PolynomialCommitmentSchemeDistributed<E: Pairing>: PolynomialCommitmen
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<(Self::Proof, Self::Evaluation), PCSError>;
 
+    /// Generates a proof for the evaluation at `point` of the polynomial
+    /// distributedly on the worker side.
     fn open_distributed_worker(
         worker_prover_param: impl Borrow<Self::WorkerProverParam>,
         poly: &Self::WorkerPolynomialHandle,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PCSError>;
+
+    /// Generates a batch proof for a list of evaluations at `points` of the
+    /// polynomials distributedly on the master side.
+    ///
+    /// The proof is also verified by PolynomialCommitmentScheme::batch_verify,
+    /// meaning that we are creating the same proof as the non-distributed
+    /// version.
+    fn multi_open_master(
+        _master_prover_param: impl Borrow<Self::MasterProverParam>,
+        _handle: &Self::MasterPolynomialHandle,
+        _points: &[Self::Point],
+        _transcript: &mut IOPTranscript<E::ScalarField>,
+        _master_channel: &mut impl MasterProverChannel,
+    ) -> Result<Self::BatchProof, PCSError> {
+        // the reason we use unimplemented!() is to enable developers to implement the
+        // trait without always implementing the batching APIs.
+        unimplemented!()
+    }
+
+    /// Generates a batch proof for a list of evaluations at `points` of the
+    /// polynomials distributedly on the worker side.
+    fn multi_open_worker(
+        _worker_prover_param: impl Borrow<Self::WorkerProverParam>,
+        _poly: &[Self::WorkerPolynomialHandle],
+        _worker_channel: &mut impl WorkerProverChannel,
+    ) -> Result<(), PCSError> {
+        // the reason we use unimplemented!() is to enable developers to implement the
+        // trait without always implementing the batching APIs.
+        unimplemented!()
+    }
 }
 
 /// API definitions for structured reference string

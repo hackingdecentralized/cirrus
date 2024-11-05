@@ -8,7 +8,7 @@ use crate::{
     custom_gate::CustomizedGates, errors::HyperPlonkErrors, structs::HyperPlonkParams,
     witness::WitnessColumn,
 };
-use arithmetic::{evaluate_opt, transpose, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{evaluate_opt, VPAuxInfo, VirtualPolynomial};
 use ark_ec::pairing::Pairing;
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
@@ -100,9 +100,7 @@ where
     PCS: PolynomialCommitmentSchemeDistributed<E>,
 {
     pub num_var: usize,
-    pub log_num_workers: usize,
     pub points: Vec<PCS::Point>,
-    pub evals: Vec<E::ScalarField>,
 }
 
 impl<E, PCS> PcsAccumulatorMaster<E, PCS>
@@ -118,12 +116,10 @@ where
         WorkerPolynomialHandle = Arc<DenseMultilinearExtension<E::ScalarField>>,
     >,
 {
-    pub fn new(num_var: usize, log_num_workers: usize) -> Self {
+    pub fn new(num_var: usize) -> Self {
         Self {
             num_var,
-            log_num_workers,
             points: vec![],
-            evals: vec![],
         }
     }
 
@@ -132,42 +128,19 @@ where
         self.points.push(point);
     }
 
-    pub fn eval_poly_and_points(
-        &mut self,
-        master_channel: &mut impl MasterProverChannel,
-    ) -> Result<(), HyperPlonkErrors> {
-        let worker_num_vars = self.num_var - self.log_num_workers;
-        let mut worker_points = Vec::new();
-        for point in self.points.iter() {
-            let (worker_point, _) = point.split_at(worker_num_vars);
-            worker_points.push(worker_point.to_vec());
-        }
-
-        master_channel.send_uniform(&worker_points)?;
-        let evals: Vec<Vec<PCS::Evaluation>> = master_channel.recv()?;
-        let evals = transpose(evals)
-            .into_iter()
-            .zip(self.points.iter())
-            .map(|(evals, point)| {
-                let (_, master_point) = point.split_at(worker_num_vars);
-                evaluate_opt(
-                    &DenseMultilinearExtension::from_evaluations_vec(self.log_num_workers, evals),
-                    master_point,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        self.evals = evals;
-        Ok(())
-    }
-
     pub fn multi_open(
         &self,
         prover_param: impl Borrow<PCS::MasterProverParam>,
         transcript: &mut IOPTranscript<E::ScalarField>,
-        master_channel: &impl MasterProverChannel,
+        master_channel: &mut impl MasterProverChannel,
     ) -> Result<PCS::BatchProof, HyperPlonkErrors> {
-        unimplemented!()
+        Ok(PCS::multi_open_master(
+            prover_param,
+            &self.num_var,
+            self.points.as_ref(),
+            transcript,
+            master_channel,
+        )?)
     }
 }
 
@@ -178,7 +151,6 @@ where
 {
     pub num_var: usize,
     pub polynomials: Vec<PCS::WorkerPolynomialHandle>,
-    // pub evals: Vec<E::ScalarField>,
 }
 
 impl<E, PCS> PcsAccumulatorWorker<E, PCS>
@@ -198,7 +170,6 @@ where
         Self {
             num_var,
             polynomials: vec![],
-            // evals: vec![],
         }
     }
 
@@ -207,26 +178,13 @@ where
         self.polynomials.push(poly.clone());
     }
 
-    pub fn eval_poly_and_points(
-        &mut self,
-        worker_channel: &mut impl WorkerProverChannel,
-    ) -> Result<(), HyperPlonkErrors> {
-        let points: Vec<PCS::Point> = worker_channel.recv()?;
-        let evals = points
-            .iter()
-            .zip(self.polynomials.iter())
-            .map(|(point, poly)| evaluate_opt(poly, point))
-            .collect::<Vec<_>>();
-        worker_channel.send(&evals)?;
-        Ok(())
-    }
-
     pub fn multi_open(
         &self,
         prover_param: impl Borrow<PCS::WorkerProverParam>,
-        worker_channel: &impl WorkerProverChannel,
+        worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
-        unimplemented!()
+        PCS::multi_open_worker(prover_param, &self.polynomials, worker_channel)?;
+        Ok(())
     }
 }
 
@@ -350,9 +308,9 @@ pub(crate) fn build_f<F: PrimeField>(
 
     let mut res = VirtualPolynomial::<F>::new(num_vars);
 
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let coeff_fr = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let coeff_fr = if *sign {
+            -F::from(*coeff as u64)
         } else {
             F::from(*coeff as u64)
         };
@@ -375,9 +333,9 @@ pub(crate) fn eval_f<F: PrimeField>(
     witness_evals: &[F],
 ) -> Result<F, HyperPlonkErrors> {
     let mut res = F::zero();
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let mut cur_value = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let mut cur_value = if *sign {
+            -F::from(*coeff as u64)
         } else {
             F::from(*coeff as u64)
         };
@@ -396,11 +354,11 @@ pub(crate) fn eval_f<F: PrimeField>(
 pub(crate) fn build_f_product<F: PrimeField>(gates: &CustomizedGates) -> Vec<(F, Vec<usize>)> {
     let mut res = Vec::new();
     let num_witness_columns = gates.num_witness_columns();
-    for (coeff, selector, witnesses) in gates.gates.iter() {
-        let coeff_fr = if *coeff < 0 {
-            -F::from(-*coeff as u64)
+    for ((sign, coeff), selector, witnesses) in gates.gates.iter() {
+        let coeff_fr = if *sign {
+            -F::from(*coeff)
         } else {
-            F::from(*coeff as u64)
+            F::from(*coeff)
         };
         let mut products = witnesses.clone();
         if let Some(s) = *selector {
@@ -514,10 +472,12 @@ pub(crate) fn eval_perm_gate<F: PrimeField>(
 // Q(x) := alpha1 * prod_master(x) - alpha1 * p1_master(x) * p2_master(x)
 //       + alpha0 * prod_worker(x) - alpha0 * p1_worker(x) * p2_worker(x)
 //       + frac(x) * g1(x) * ... * gk(x) - f1(x) * ... * fk(x)
-// where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 * prod_master(x_2..t, 0, x_t+1..n)
-//       p2_master(x) = (1-x1) * prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
-//       p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 0)
-//       p2_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
+// where p1_master(x) = (1-x1) * prod_worker(x_2..t, 0, 1, ..., 1, 0) + x1 *
+// prod_master(x_2..t, 0, x_t+1..n)       p2_master(x) = (1-x1) *
+// prod_worker(x_2..t, 1, 0, ..., 0, 1) + x1 * prod_master(x_2..t, 1, x_t+1..n)
+//       p1_worker(x) = (1-x_{t+1}) * frac(x_1..t, x_{t+2}..n, 0) + x_{t+1} *
+// prod_worker(x_1..t, x_{t+2}..n, 0)       p2_worker(x) = (1-x_{t+1}) *
+// frac(x_1..t, x_{t+2}..n, 1) + x_{t+1} * prod_worker(x_1..t, x_{t+2}..n, 1)
 //       gi(x) = (wi(x) + beta * perms_i(x) + gamma)
 //       fi(x) = (wi(x) + beta * s_id_i(x) + gamma)
 //       t = log2(num_workers)
@@ -605,7 +565,10 @@ mod test {
         //     (-1,    None,           vec![id_W2])
         // ]
         let gates = CustomizedGates {
-            gates: vec![(1, Some(0), vec![0, 0, 0, 0, 0]), (-1, None, vec![1])],
+            gates: vec![
+                ((false, 1), Some(0), vec![0, 0, 0, 0, 0]),
+                ((true, 1), None, vec![1]),
+            ],
         };
         let f = build_f(&gates, num_vars, &[ql.clone()], &[w1.clone(), w2.clone()])?;
 
