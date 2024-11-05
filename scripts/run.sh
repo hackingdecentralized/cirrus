@@ -2,13 +2,14 @@
 
 # Default values for the parameters
 gate="vanilla"
-log_num_vars=15
+log_num_vars=13
 log_num_workers=3
 num_threads=8
 fdir=""
 username="ubuntu"
 worker_id=0
 master_addr="127.0.0.1:8000"
+analyze_target="master"
 
 # Function to display usage instructions
 usage() {
@@ -22,12 +23,13 @@ usage() {
     echo "  --worker_id <worker_id>      - Worker ID for single worker process (default: 0)"
     echo "  --username <username>        - Username for memory monitoring (default: ubuntu)"
     echo "  --master_addr <master_addr>  - Master address (default:127.0.0.1:8000)"
+    echo "  --analyze_target <analyze_target> - Target for analysis (default: master)"
     echo "Commands:"
     echo "  setup             - Sets up the directories and runs the setup command."
     echo "  run_master        - Starts the master process."
     echo "  run_multi_worker  - Starts multiple worker processes."
     echo "  run_single_worker - Starts a single worker process."
-    echo "  analyze           - Analyzes a log file. Usage: analyze <log_file> <output_file>"
+    echo "  analyze           - Analyzes a log file. Usage: analyze <master> or <worker>"
     exit 1
 }
 
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --master_addr)
             master_addr="$2"
+            shift 2
+            ;;
+        --analyze_target)
+            analyze_target="$2"
             shift 2
             ;;
         *)
@@ -191,26 +197,15 @@ run_single_worker() {
 
 # Function to analyze a given log file
 analyze() {
-    log_file=$fdir/"$1".log
-    output_file=$fdir/$1_analysis.json
-
-    if [[ -z "$log_file" || -z "$output_file" ]]; then
-        echo "Error: Please provide a log file and an output file for analysis."
-        echo "Usage: $0 analyze <log_file> <output_file>"
-        exit 1
-    fi
+    log_file="$fdir/${analyze_target}.log"
+    output_file="$fdir/${analyze_target}_analysis.json"
 
     echo "Analyzing log file $log_file..."
     python3 analyze.py -l "$log_file" -o "$output_file"
     echo "Analysis complete. Results saved to $output_file"
 }
 
-# Main script entry point
-if [[ -z "$action" ]]; then
-    usage
-fi
-
-# Execute the action based on the command argument
+# Main script entry point to execute the chosen action
 case "$action" in
     setup)
         setup
@@ -225,7 +220,7 @@ case "$action" in
         run_single_worker
         ;;
     analyze)
-        analyze "$2" "$3"
+        analyze
         ;;
     *)
         usage
