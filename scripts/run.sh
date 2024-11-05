@@ -8,6 +8,7 @@ num_threads=8
 fdir=""
 username="ubuntu"
 worker_id=0
+master_addr="127.0.0.1:8000"
 
 # Function to display usage instructions
 usage() {
@@ -20,6 +21,7 @@ usage() {
     echo "  --fdir <fdir>                - Output directory"
     echo "  --worker_id <worker_id>      - Worker ID for single worker process (default: 0)"
     echo "  --username <username>        - Username for memory monitoring (default: ubuntu)"
+    echo "  --master_addr <master_addr>  - Master address (default:127.0.0.1:8000)"
     echo "Commands:"
     echo "  setup             - Sets up the directories and runs the setup command."
     echo "  run_master        - Starts the master process."
@@ -63,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             username="$2"
             shift 2
             ;;
+        --master_addr)
+            master_addr="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             usage
@@ -95,7 +101,7 @@ setup() {
 # Function to run the master process
 run_master() {
     echo "Starting master process..."
-    cargo run --bin master --features print-trace -- --num-threads "$num_threads" --circuit-file "$fdir/circuit.plonk" --pk-master "$fdir/master.pk" --verification-key "$fdir/verify.key" > "$fdir/master.log" &
+    cargo run --bin master --features print-trace -- --num-threads "$num_threads" --circuit-file "$fdir/circuit.plonk" --pk-master "$fdir/master.pk" --verification-key "$fdir/verify.key" --master-addr "$master_addr" > "$fdir/master.log" &
     master_pid=$!
 
     # Start top in the background to monitor memory usage, filtering by the master process
@@ -119,43 +125,43 @@ run_master() {
 run_multi_worker() {
     echo "Starting multi-worker processes..."
     # Array to store PIDs of worker processes
-    worker_pids=()
+    # worker_pids=()
     
     # Loop to start each worker
     for ((i=0; i<num_workers-1; i++)); do
-        cargo run --bin worker -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" &
-        worker_pids+=($!)  # Store each worker's PID
+        cargo run --bin worker -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" &
+        # worker_pids+=($!)  # Store each worker's PID
     done
 
     # Start the final worker with logging
-    i=$((num_workers - 1))
-    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" > "$fdir/worker.log" &
-    worker_pids+=($!)
+    # i=$((num_workers - 1))
+    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" > "$fdir/worker.log" &
+    # worker_pids+=($!)
 
-    # Start top in the background to monitor memory usage, filtering by worker processes
-    top -d 1 -b -u "$username" | grep -w "worker" > "$fdir/worker_memory.log" &
-    top_pid=$!
+    # # Start top in the background to monitor memory usage, filtering by worker processes
+    # top -d 1 -b -u "$username" | grep -w "worker" > "$fdir/worker_memory.log" &
+    # top_pid=$!
 
-    # Loop to check if any worker processes are still running
-    while true; do
-        all_done=true
-        for pid in "${worker_pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then
-                all_done=false
-                break
-            fi
-        done
+    # # Loop to check if any worker processes are still running
+    # while true; do
+    #     all_done=true
+    #     for pid in "${worker_pids[@]}"; do
+    #         if kill -0 "$pid" 2>/dev/null; then
+    #             all_done=false
+    #             break
+    #         fi
+    #     done
 
-        # Exit the loop if all workers are done
-        if $all_done; then
-            break
-        fi
+    #     # Exit the loop if all workers are done
+    #     if $all_done; then
+    #         break
+    #     fi
 
-        sleep 1
-    done
+    #     sleep 1
+    # done
 
-    # Stop top once all worker processes terminate
-    kill "$top_pid"
+    # # Stop top once all worker processes terminate
+    # kill "$top_pid"
 }
 
 # Function to run a single worker
@@ -163,7 +169,7 @@ run_single_worker() {
     echo "Starting single worker process..."
 
     # Run a single worker with ID 0 and capture its PID
-    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$worker_id" --pk-worker "$fdir/worker_$worker_id.pk" > "$fdir/worker_$worker_id.log" &
+    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$worker_id" --pk-worker "$fdir/worker_$worker_id.pk" --master-addr "$master_addr" > "$fdir/worker_$worker_id.log" &
     single_worker_pid=$!
 
     # Start top in the background to monitor memory usage for this specific worker
