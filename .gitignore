@@ -301,3 +301,4 @@ TSWLatexianTemp*
 
 *.txt
 *.param
+out/
