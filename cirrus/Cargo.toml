@@ -18,7 +18,7 @@ subroutines = { path = "../subroutines" }
 util = { path = "../util" }
 ark-bls12-381 = { version = "0.4.0", default-features = false, features = [ "curve" ] }
 ark-bn254 = { version = "0.4.0", default-features = false, features = [ "curve" ] }
-ark-bls12-377 = { version = "0.4.0", default-features = false, features = [ "curve" ] }
+ark-bls12-377 = { version = "0.5.0", default-features = false, features = [ "curve" ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5.20", features = ["derive"] }
