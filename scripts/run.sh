@@ -2,34 +2,36 @@
 
 # Default values for the parameters
 gate="vanilla"
-log_num_vars=13
+log_num_vars=20
 log_num_workers=3
+curve="bls12_381"
 num_threads=8
 fdir=""
 username="ubuntu"
 worker_id=0
-master_addr="127.0.0.1:8000"
+master_addr="127.0.0.1:7000"
 analyze_target="master"
 
 # Function to display usage instructions
 usage() {
     echo "Usage: $0 {setup|run_master|run_multi_worker|run_single_worker|analyze} [options]"
     echo "Options:"
-    echo "  --gate <gate>                - The gate type (default: vanilla)"
+    echo "  --gate <gate>                        - The gate type (default: vanilla)"
     echo "  --log_num_vars <log_num_vars>        - The number of variables (default: 15)"
-    echo "  --log_num_workers <log_num_workers> - Logarithmic number of workers (default: 3)"
-    echo "  --num_threads <num_threads>  - Number of threads (default: 8)"
-    echo "  --fdir <fdir>                - Output directory"
-    echo "  --worker_id <worker_id>      - Worker ID for single worker process (default: 0)"
-    echo "  --username <username>        - Username for memory monitoring (default: ubuntu)"
-    echo "  --master_addr <master_addr>  - Master address (default:127.0.0.1:8000)"
-    echo "  --analyze_target <analyze_target> - Target for analysis (default: master)"
+    echo "  --log_num_workers <log_num_workers>  - Logarithmic number of workers (default: 3)"
+    echo "  --curve <curve>                      - The curve type, choose from bls12_381, bn254, bls12_377 (default: bls12_381)"
+    echo "  --num_threads <num_threads>          - Number of threads (default: 8)"
+    echo "  --fdir <fdir>                        - Output directory"
+    echo "  --worker_id <worker_id>              - Worker ID for single worker process (default: 0)"
+    echo "  --username <username>                - Username for memory monitoring (default: ubuntu)"
+    echo "  --master_addr <master_addr>          - Master address (default:127.0.0.1:8000)"
+    echo "  --analyze_target <analyze_target>    - Target for analysis (default: master)"
     echo "Commands:"
-    echo "  setup             - Sets up the directories and runs the setup command."
-    echo "  run_master        - Starts the master process."
-    echo "  run_multi_worker  - Starts multiple worker processes."
-    echo "  run_single_worker - Starts a single worker process."
-    echo "  analyze           - Analyzes a log file. Usage: analyze <master> or <worker>"
+    echo "  setup                                - Sets up the directories and runs the setup command."
+    echo "  run_master                           - Starts the master process."
+    echo "  run_multi_worker                     - Starts multiple worker processes."
+    echo "  run_single_worker                    - Starts a single worker process."
+    echo "  analyze                              - Analyzes a log file. Usage: analyze <master> or <worker>"
     exit 1
 }
 
@@ -49,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --log_num_workers)
             log_num_workers="$2"
+            shift 2
+            ;;
+        --curve)
+            curve="$2"
             shift 2
             ;;
         --num_threads)
@@ -84,7 +90,11 @@ done
 
 # Set default fdir if not specified
 if [[ -z "$fdir" ]]; then
-    fdir="out/${gate}-${log_num_vars}-${log_num_workers}"
+    if [[ "$curve" == "bls12_381" ]]; then
+        fdir="out/${gate}-${log_num_vars}-${log_num_workers}"
+    else
+        fdir="out/${gate}-${curve}-${log_num_vars}-${log_num_workers}"
+    fi
 fi
 
 # Calculate the number of workers
@@ -101,13 +111,13 @@ setup() {
     fi
 
     # Run the setup command with cargo
-    cargo run --bin setup -- --output "$fdir" --log-num-constraints "$log_num_vars" --log-num-workers "$log_num_workers"
+    cargo run --release --bin setup -- --output "$fdir" --log-num-constraints "$log_num_vars" --log-num-workers "$log_num_workers" --curve "$curve"
 }
 
 # Function to run the master process
 run_master() {
     echo "Starting master process..."
-    cargo run --bin master --features print-trace -- --num-threads "$num_threads" --circuit-file "$fdir/circuit.plonk" --pk-master "$fdir/master.pk" --verification-key "$fdir/verify.key" --master-addr "$master_addr" > "$fdir/master.log" &
+    cargo run --release --bin master --features print-trace -- --num-threads "$num_threads" --curve "$curve" --circuit-file "$fdir/circuit.plonk" --pk-master "$fdir/master.pk" --verification-key "$fdir/verify.key" --master-addr "$master_addr" > "$fdir/master.log" &
     master_pid=$!
 
     # Start top in the background to monitor memory usage, filtering by the master process
@@ -135,13 +145,13 @@ run_multi_worker() {
     
     # Loop to start each worker
     for ((i=0; i<num_workers-1; i++)); do
-        cargo run --bin worker -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" &
+        cargo run --release --bin worker -- --num-threads "$num_threads" --worker-id "$i" --curve "$curve" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" &
         # worker_pids+=($!)  # Store each worker's PID
     done
 
     # Start the final worker with logging
     # i=$((num_workers - 1))
-    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$i" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" > "$fdir/worker.log" &
+    cargo run --release --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$i" --curve "$curve" --pk-worker "$fdir/worker_$i.pk" --master-addr "$master_addr" > "$fdir/worker.log" &
     # worker_pids+=($!)
 
     # # Start top in the background to monitor memory usage, filtering by worker processes
@@ -175,7 +185,7 @@ run_single_worker() {
     echo "Starting single worker process..."
 
     # Run a single worker with ID 0 and capture its PID
-    cargo run --bin worker --features print-trace -- --num-threads "$num_threads" --worker-id "$worker_id" --pk-worker "$fdir/worker_$worker_id.pk" --master-addr "$master_addr" > "$fdir/worker_$worker_id.log" &
+    cargo run --release --bin worker --features print-trace -- --num-threads "$num_threads" --curve "$curve" --worker-id "$worker_id" --pk-worker "$fdir/worker_$worker_id.pk" --master-addr "$master_addr" > "$fdir/worker_$worker_id.log" &
     single_worker_pid=$!
 
     # Start top in the background to monitor memory usage for this specific worker

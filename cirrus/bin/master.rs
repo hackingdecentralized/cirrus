@@ -1,3 +1,4 @@
+use std::time::Instant;
 use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
@@ -10,9 +11,10 @@ use hyperplonk::{
 use std::{fs::File, path::PathBuf};
 use subroutines::{MasterProverChannelSocket, MultilinearKzgPCS, PolyIOP};
 
-type E = ark_bls12_381::Bls12_381;
-type Fr = <E as Pairing>::ScalarField;
-type PCS = MultilinearKzgPCS<E>;
+// Import all the pairing-friendly curves
+use ark_bn254::Bn254;
+use ark_bls12_381::Bls12_381;
+use ark_bls12_377::Bls12_377;
 
 #[derive(Parser)]
 struct Args {
@@ -42,6 +44,12 @@ struct Args {
         default_value = "127.0.0.0:9103"
     )]
     master_addr: String,
+    #[clap(
+        long,
+        value_name = "choose curve among [\"bn254\", \"bls12_381\", \"bls12_377\", \"mnt4_753\", \"mnt6_753\"]",
+        default_value = "bls12_381"
+    )]
+    curve: String,
 }
 
 fn main() -> Result<(), HyperPlonkErrors> {
@@ -51,6 +59,7 @@ fn main() -> Result<(), HyperPlonkErrors> {
         pk_master,
         verification_key,
         master_addr,
+        curve,
     } = Args::parse();
 
     if !circuit_file.exists() {
@@ -83,14 +92,52 @@ fn main() -> Result<(), HyperPlonkErrors> {
     #[cfg(not(feature = "parallel"))]
     println!("[WARN] parallel feature is not enabled, using single thread");
 
+    match curve.as_str() {
+        "bn254" => run_with_curve::<Bn254>(circuit_file, pk_master, verification_key, master_addr),
+        "bls12_381" => run_with_curve::<Bls12_381>(circuit_file, pk_master, verification_key, master_addr),
+        "bls12_377" => run_with_curve::<Bls12_377>(circuit_file, pk_master, verification_key, master_addr),
+        _ => {
+            return Err(HyperPlonkErrors::InvalidParameters(
+                "curve should be one of [\"bn254\", \"bls12_381\", \"bls12_377\"]".to_string(),
+            ));
+        }
+    }
+}
+
+fn run_with_curve<E: Pairing>(
+    circuit_file: PathBuf,
+    pk_master_path: PathBuf,
+    verification_key_path: PathBuf,
+    master_addr: String,
+) -> Result<(), HyperPlonkErrors> {
+
+    #[cfg(feature = "print-time")]
+    let start_read_circuit = Instant::now();
     let file = File::open(circuit_file).unwrap();
-    let circuit = MockCircuit::<Fr>::deserialize_uncompressed(file).unwrap();
-    let file = File::open(pk_master).unwrap();
-    let pk_master = HyperPlonkProvingKeyMaster::<E, PCS>::deserialize_uncompressed(file).unwrap();
+    #[cfg(feature = "compress")]
+    let circuit = MockCircuit::<Fr>::deserialize_compressed(file).unwrap();
+    #[cfg(not(feature = "compress"))]
+    let circuit = MockCircuit::<<E as Pairing>::ScalarField>::deserialize_uncompressed(file).unwrap();
+    #[cfg(feature = "print-time")]
+    println!("[INFO] read circuit time: {:?}", start_read_circuit.elapsed());
+
+    #[cfg(feature = "print-time")]
+    let start_read_pk = Instant::now();
+    let file = File::open(pk_master_path).unwrap();
+    #[cfg(feature = "compress")]
+    let pk_master = HyperPlonkProvingKeyMaster::<E, MultilinearKzgPCS::<E>>::deserialize_compressed(file).unwrap();
+    #[cfg(not(feature = "compress"))]
+    let pk_master = HyperPlonkProvingKeyMaster::<E, MultilinearKzgPCS::<E>>::deserialize_uncompressed(file).unwrap();
+    #[cfg(feature = "print-time")]
+    println!("[INFO] read pk time: {:?}", start_read_pk.elapsed());
+
     let log_num_workers = pk_master.log_num_workers;
 
-    let file = File::open(verification_key).unwrap();
-    let vk = HyperPlonkVerifyingKey::<E, PCS>::deserialize_uncompressed(file).unwrap();
+    let file = File::open(verification_key_path).unwrap();
+    #[cfg(feature = "compress")]
+    let vk = HyperPlonkVerifyingKey::<E, MultilinearKzgPCS::<E>>::deserialize_compressed(file).unwrap();
+    #[cfg(not(feature = "compress"))]
+    let vk = HyperPlonkVerifyingKey::<E, MultilinearKzgPCS::<E>>::deserialize_uncompressed(file).unwrap();
 
     println!("[INFO] loaded circuit, master proving key and verification key");
 
@@ -99,8 +146,8 @@ fn main() -> Result<(), HyperPlonkErrors> {
 
     let time = std::time::Instant::now();
 
-    let proof: HyperPlonkProofDistributed<E, PolyIOP<Fr>, MultilinearKzgPCS<E>> =
-        PolyIOP::<Fr>::prove_master(
+    let proof: HyperPlonkProofDistributed<E, PolyIOP<<E as Pairing>::ScalarField>, MultilinearKzgPCS<E>> =
+        PolyIOP::<<E as Pairing>::ScalarField>::prove_master(
             &pk_master,
             &circuit.public_inputs,
             &circuit.witnesses,
@@ -108,10 +155,10 @@ fn main() -> Result<(), HyperPlonkErrors> {
             &mut master_channel,
         )?;
 
-    let verify_result = PolyIOP::<Fr>::verify(&vk, &circuit.public_inputs, &proof)?;
+    let verify_result = PolyIOP::<<E as Pairing>::ScalarField>::verify(&vk, &circuit.public_inputs, &proof)?;
 
     println!("[INFO] verification result: {}", verify_result);
-    println!("[INFO] time elapsed: {:?}", time.elapsed());
+    println!("[TIME] time elapsed: {:?}", time.elapsed());
 
     Ok(())
 }

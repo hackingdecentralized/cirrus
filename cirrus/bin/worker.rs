@@ -1,3 +1,4 @@
+use std::time::Instant;
 use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
@@ -7,9 +8,10 @@ use hyperplonk::{
 use std::{fs::File, path::PathBuf};
 use subroutines::{MultilinearKzgPCS, PolyIOP, WorkerProverChannelSocket};
 
-type E = ark_bls12_381::Bls12_381;
-type Fr = <E as Pairing>::ScalarField;
-type PCS = MultilinearKzgPCS<E>;
+// Import all the pairing-friendly curves
+use ark_bn254::Bn254;
+use ark_bls12_381::Bls12_381;
+use ark_bls12_377::Bls12_377;
 
 #[derive(Parser)]
 struct Args {
@@ -29,6 +31,12 @@ struct Args {
         default_value = "127.0.0.0:9103"
     )]
     master_addr: String,
+    #[clap(
+        long,
+        value_name = "choose curve among [\"bn254\", \"bls12_381\", \"bls12_377\", \"mnt4_753\", \"mnt6_753\"]",
+        default_value = "bls12_381"
+    )]
+    curve: String,
 }
 
 fn main() -> Result<(), HyperPlonkErrors> {
@@ -37,6 +45,7 @@ fn main() -> Result<(), HyperPlonkErrors> {
         worker_id,
         pk_worker,
         master_addr,
+        curve,
     } = Args::parse();
 
     if !pk_worker.exists() {
@@ -57,10 +66,34 @@ fn main() -> Result<(), HyperPlonkErrors> {
     #[cfg(not(feature = "parallel"))]
     println!("[WARN] parallel feature is disabled, using single thread");
 
-    let file = File::open(pk_worker).unwrap();
-    let pk_worker = HyperPlonkProvingKeyWorker::<E, PCS>::deserialize_uncompressed(&file).unwrap();
+    match curve.as_str() {
+        "bn254" => run_with_curve::<Bn254>(worker_id, pk_worker, master_addr),
+        "bls12_381" => run_with_curve::<Bls12_381>(worker_id, pk_worker, master_addr),
+        "bls12_377" => run_with_curve::<Bls12_377>(worker_id, pk_worker, master_addr),
+        _ => {
+            return Err(HyperPlonkErrors::InvalidParameters(
+                "curve should be one of [\"bn254\", \"bls12_381\", \"bls12_377\"]".to_string(),
+            ));
+        }
+    }
+}
+
+fn run_with_curve<E: Pairing>(
+    worker_id: usize,
+    pk_worker_path: PathBuf,
+    master_addr: String,
+) -> Result<(), HyperPlonkErrors> {
+    #[cfg(feature = "print-time")]
+    let start_read_pk = Instant::now();
+    let file = File::open(pk_worker_path).unwrap();
+    #[cfg(feature = "compress")]
+    let pk_worker = HyperPlonkProvingKeyWorker::<E, MultilinearKzgPCS::<E>>::deserialize_compressed(&file).unwrap();
+    #[cfg(not(feature = "compress"))]
+    let pk_worker = HyperPlonkProvingKeyWorker::<E, MultilinearKzgPCS::<E>>::deserialize_uncompressed(&file).unwrap();
+    #[cfg(feature = "print-time")]
+    println!("[INFO] read worker proving key in {:?}", start_read_pk.elapsed());
 
     let mut worker_channel = WorkerProverChannelSocket::bind(&master_addr, worker_id).unwrap();
 
-    PolyIOP::<Fr>::prove_worker(&pk_worker, &mut worker_channel)
+    PolyIOP::<<E as Pairing>::ScalarField>::prove_worker(&pk_worker, &mut worker_channel)
 }
