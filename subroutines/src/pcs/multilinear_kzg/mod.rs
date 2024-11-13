@@ -298,8 +298,12 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
             )));
         }
 
+        #[cfg(not(feature = "bench-master"))]
         let commitments: Vec<E::G1Affine> = master_channel.recv()?;
         // commitments.iter().fold(E::G1Affine::from(1), |acc, x| acc * x.0);
+
+        #[cfg(feature = "bench-master")]
+        let commitments = vec![E::G1Affine::default(); 1 << master_num_vars];
 
         let msm_timer =
             start_timer_with_timestamp!(format!("msm of size {}; master", commitments.len()));
@@ -414,7 +418,12 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
 
         master_channel.send_uniform(b"open starting signal")?;
         master_channel.send_uniform(&worker_points.to_vec())?;
+
+        #[cfg(not(feature = "bench-master"))]
         let evals: Vec<Self::Evaluation> = master_channel.recv()?;
+        #[cfg(feature = "bench-master")]
+        let evals = vec![E::ScalarField::zero(); 1 << master_num_vars];
+
         let master_poly = Arc::new(DenseMultilinearExtension::from_evaluations_vec(
             master_num_vars,
             evals,
@@ -423,7 +432,13 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let (proof, eval) =
             open_internal(master_prover_param.borrow(), &master_poly, master_points)?;
 
+        #[cfg(not(feature = "bench-master"))]
         let worker_proofs: Vec<MultilinearKzgProof<E>> = master_channel.recv()?;
+
+        #[cfg(feature = "bench-master")]
+        let worker_proofs: Vec<MultilinearKzgProof<E>> = vec![ MultilinearKzgProof {
+            proofs: vec![E::G1Affine::zero(); worker_num_vars],
+        }; (1 << master_num_vars) / worker_num_vars];
 
         let aggregated_proof = {
             let mut proofs_iter = worker_proofs
@@ -555,7 +570,12 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
                 .collect::<Result<Vec<_>, _>>()?,
         ))?;
 
+        #[cfg(not(feature = "bench-master"))]
         let evals: Vec<Vec<Self::Evaluation>> = master_channel.recv()?;
+
+        #[cfg(feature = "bench-master")]
+        let evals = vec![vec![E::ScalarField::zero(); k]; 1 << log_num_workers];
+
         let evals = transpose(evals)
             .into_iter()
             .zip(master_points.iter())

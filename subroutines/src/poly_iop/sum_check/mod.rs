@@ -308,7 +308,14 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
         for _ in 0..phase1 {
             master_channel.send_uniform(&challenge)?;
+            
+            #[cfg(not(feature = "bench-master"))]
             let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
+            #[cfg(feature = "bench-master")]
+            let worker_prover_msgs = vec![IOPProverMessage {
+                evaluations: vec![F::zero(); eval_len],
+            }; 1 << log_num_workers / phase1];
+
             let evaluations =
                 worker_prover_msgs
                     .iter()
@@ -333,7 +340,19 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let construct_poly_timer = start_timer_with_timestamp!("construct poly; master");
         master_channel.send_uniform(&challenge)?;
         let flattened_ml_extensions = {
+            #[cfg(not(feature = "bench-master"))]
             let evals = master_channel.recv::<Vec<F>>()?;
+
+            #[cfg(feature = "bench-master")]
+            let num_mle = poly_products
+                .iter()
+                .map(|(_, indices)| indices.iter().max().unwrap_or(&0))
+                .max()
+                .unwrap_or(&0)
+                .clone() + 1;
+            #[cfg(feature = "bench-master")]
+            let evals = vec![vec![F::zero(); num_mle]; 1 << log_num_workers];
+
             let len = evals
                 .get(0)
                 .map(|x| x.len())

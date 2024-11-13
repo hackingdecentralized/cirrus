@@ -398,7 +398,13 @@ where
 
         let preparation =
             start_timer_with_timestamp!("Distributed prod check preparation; master");
+
+        #[cfg(not(feature = "bench-master"))]
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
+
+        #[cfg(feature = "bench-master")]
+        let sub_prod = vec![E::ScalarField::zero(); 1 << log_num_workers];
+
         let prod_master = compute_product_poly(&Arc::new(
             DenseMultilinearExtension::from_evaluations_vec(log_num_workers, sub_prod.clone()),
         ))?;

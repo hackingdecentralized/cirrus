@@ -36,6 +36,10 @@ name = "setup"
 path = "bin/setup.rs"
 
 [[bin]]
+name = "bench_master"
+path = "bin/bench_master.rs"
+
+[[bin]]
 name = "hyperplonk"
 path = "bin/hyperplonk.rs"
 
@@ -53,6 +57,9 @@ bench = ["parallel"]
 # extensive sanity checks that are useful for debugging
 extensive_sanity_checks = [
     "hyperplonk/extensive_sanity_checks"
+]
+bench-master = [
+    "subroutines/bench-master",
 ]
 parallel = [ 
     "rayon",

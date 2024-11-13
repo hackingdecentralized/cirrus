@@ -86,6 +86,9 @@ impl MasterProverChannelSocket {
 // Implement MasterProverChannel for MasterProverChannelSocket
 impl MasterProverChannel for MasterProverChannelSocket {
     fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+        #[cfg(feature = "bench-master")]
+        return Ok(());
+
         let start = start_timer_with_timestamp!("MasterProverChannel::send_uniform");
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
@@ -128,6 +131,9 @@ impl MasterProverChannel for MasterProverChannelSocket {
         &mut self,
         msgs: Vec<T>,
     ) -> Result<(), DistributedError> {
+        #[cfg(feature = "bench-master")]
+        return Ok(());
+
         let start = start_timer_with_timestamp!("MasterProverChannel::send_different");
         if msgs.len() != self.worker_sockets.len() {
             return Err(DistributedError::MasterSendError);

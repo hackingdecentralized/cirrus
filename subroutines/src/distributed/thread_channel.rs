@@ -53,6 +53,9 @@ impl WorkerProverChannelThread {
 
 impl MasterProverChannel for MasterProverChannelThread {
     fn send_uniform(&mut self, msg: &impl CanonicalSerialize) -> Result<(), DistributedError> {
+        #[cfg(feature = "bench-master")]
+        return Ok(());
+
         let mut serialized_msg = Vec::new();
         msg.serialize_compressed(&mut serialized_msg)
             .map_err(DistributedError::from)?;
@@ -84,6 +87,9 @@ impl MasterProverChannel for MasterProverChannelThread {
         &mut self,
         msg: Vec<T>,
     ) -> Result<(), DistributedError> {
+        #[cfg(feature = "bench-master")]
+        return Ok(());
+
         #[cfg(feature = "parallel")]
         self.send_channel
             .par_iter()
