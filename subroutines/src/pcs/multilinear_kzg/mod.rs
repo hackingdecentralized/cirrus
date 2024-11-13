@@ -311,7 +311,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let commitments: Vec<E::G1Affine> = (0..(1 << master_num_vars))
             .map(|_| {
                 // Generate a random scalar and use it to scale the default G1Affine element
-                let random_scalar = <E as Pairing>::ScalarField::from(OsRng.next_u64() as u128);
+                let random_scalar = <E as Pairing>::ScalarField::from(100100101u128);
                 E::G1Affine::from(E::G1Affine::default().mul(random_scalar))
             })
             .collect();
@@ -438,7 +438,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
 
         #[cfg(feature = "bench-master")]
         let evals: Vec<E::ScalarField> = (0..(1 << master_num_vars))
-            .map(|_| E::ScalarField::from(OsRng.next_u64() as u128))
+            .map(|_| E::ScalarField::from(0u128))
             .collect();
 
         let master_poly = black_box(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
@@ -462,7 +462,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
                     proofs: (0..worker_num_vars)
                         .map(|_| {
                             // Generate a random u128 and convert it into the scalar field
-                            let random_scalar = <E as Pairing>::ScalarField::from(OsRng.next_u64() as u128);
+                            let random_scalar = <E as Pairing>::ScalarField::from(1101010010u128);
                             E::G1Affine::from(E::G1Affine::default().mul(random_scalar))
                         })
                         .collect()
@@ -610,12 +610,12 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let evals: Vec<Vec<E::ScalarField>> = (0..(1 << log_num_workers))
             .map(|_| {
                 (0..k)
-                    .map(|_| E::ScalarField::from(OsRng.next_u64() as u128))
+                    .map(|_| E::ScalarField::from(100100101u128))
                     .collect()
             })
             .collect();
 
-        let evals = transpose(evals)
+        let evals = black_box(transpose(evals)
             .into_iter()
             .zip(master_points.iter())
             .map(|(evals, point)| {
@@ -624,7 +624,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
                     point,
                 )
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>());
 
         // generate the sumcheck proof
         let proof =

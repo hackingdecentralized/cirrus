@@ -323,13 +323,13 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
                 .map(|_| {
                     IOPProverMessage {
                         evaluations: (0..eval_len)
-                            .map(|_| F::from((OsRng.next_u64() as u128)))
+                            .map(|_| F::from((1000100101u128)))
                             .collect(),
                     }
                 })
                 .collect();
 
-            let evaluations = 
+            let evaluations = black_box(
                 worker_prover_msgs
                     .iter()
                     .fold(vec![F::zero(); eval_len], |ev1, ev2| {
@@ -337,7 +337,8 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
                             .zip(ev2.evaluations.iter())
                             .map(|(e1, e2)| e1 + e2)
                             .collect::<Vec<_>>()
-                    });
+                    })
+            );
 
             let prover_msg = IOPProverMessage { evaluations };
             transcript.append_serializable_element(b"prover msg", &prover_msg)?;
@@ -370,7 +371,7 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
             let evals: Vec<Vec<F>> = (0..(1 << log_num_workers))
                 .map(|_| {
                     (0..num_mle)
-                        .map(|_| F::from(OsRng.next_u64() as u128))
+                        .map(|_| F::from(1000100101u128))
                         .collect()
                 })
                 .collect();
@@ -379,11 +380,11 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
                 .get(0)
                 .map(|x| x.len())
                 .ok_or(PolyIOPErrors::InvalidDistributedMessage)?;
-            let mut x = evals.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>();
-            (0..len)
+            let mut x = black_box(evals.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>());
+            black_box((0..len)
                 .map(|_| x.iter_mut().map(|y| y.next().unwrap()).collect::<Vec<_>>())
                 .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(phase2, x)))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         };
 
         let poly = VirtualPolynomial::new_from_raw(

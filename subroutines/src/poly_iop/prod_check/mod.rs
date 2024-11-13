@@ -409,7 +409,7 @@ where
         
         #[cfg(feature = "bench-master")]
         let sub_prod: Vec<E::ScalarField> = (0..(1 << log_num_workers))
-            .map(|_| E::ScalarField::from(OsRng.next_u64() as u128))
+            .map(|_| E::ScalarField::from(1000100101u128))
             .collect();
 
         let prod_master = black_box(compute_product_poly(&Arc::new(
