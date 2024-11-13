@@ -13,46 +13,47 @@ key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-    "23.22.219.232",
-    "34.230.29.94",
-    "34.228.79.107",
-    '54.144.50.197',
-    '23.22.232.175',
-    '54.87.4.182',
-    '98.80.8.31',
-    '54.152.74.154',
-    '54.164.223.244',
-    '3.91.190.135',
-    '54.87.27.71',
-    '54.196.217.135',
-    '54.167.4.15',
-    '34.236.155.14',
-    '34.227.226.47',
-    '54.210.54.145',
-    '34.224.166.48',
-    '3.80.195.113',
-    '54.160.211.46',
-    '54.167.0.186',
-    '54.196.4.150',
-    '54.221.18.232',
-    '107.20.128.104',
-    '52.23.234.30',
-    '3.89.211.109',
-    '3.80.75.193',
-    '3.91.16.200',
-    '52.72.195.18',
-    '54.226.5.208',
-    '54.87.223.134',
-    '54.242.56.55',
-    '34.207.210.134',
-    '54.235.232.106',
+    "54.166.156.21",
+    "54.82.65.157",
+    "18.209.22.83",
+    "54.167.25.218",
+    "3.94.198.250",
+    "34.203.200.225",
+    "34.229.125.185",
+    "54.163.222.169",
+    "54.167.4.21",
+    "34.228.115.220",
+    "18.209.9.201",
+    "50.19.29.91",
+    "54.90.144.167",
+    "54.163.47.82",
+    "18.212.77.123",
+    "54.167.25.142",
+    "54.167.61.96",
+    "3.88.176.108",
+    "34.228.32.180",
+    "3.88.220.104",
+    "3.90.200.24",
+    "34.229.139.237",
+    "52.23.234.44",
+    "54.196.253.246",
+    "18.215.161.101",
+    "54.237.234.120",
+    "184.72.163.175",
+    "34.207.81.91",
+    "184.72.183.245",
+    "34.229.97.30",
+    "3.88.63.135",
+    "18.234.172.82",
+    "54.174.11.205"
 ]
 
 # Path to the bash file with commands
 setup_cmd = os.path.join(script_dir, "update_setup.sh")
 
 # Local path to the `cirrus.zip` file
-local_zip_path = "../cirrus.zip"
+local_zip_path = "../hekaton.zip"
+remote_zip_path = "/home/ubuntu/hekaton.zip"
 
 # List of files to be uploaded to specific instances
 circuit_files = ["circuit.plonk", "master.pk", "verify.key"]
@@ -77,7 +78,6 @@ def transfer_repo_code(ip, main_key_path, local_zip_path):
         ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
 
         sftp = ssh.open_sftp()
-        remote_zip_path = "/home/ubuntu/cirrus.zip"
         print(f"Transferring {local_zip_path} to {ip}:{remote_zip_path}...")
         sftp.put(local_zip_path, remote_zip_path)
         sftp.close()
@@ -128,6 +128,40 @@ def transfer_circuit_files(ip, main_key_path, log_num_vars, log_num_workers, ins
     except (SSHException, IOError) as e:
         print(f"Failed to transfer circuit files on {ip}: {e}")
 
+def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_num_workers, instance_type, worker_id_start=0, num_threads=8):
+    """Transfers circuit files to the master or worker instances."""
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
+        sftp = ssh.open_sftp()
+        
+        folder_path = f"out/vanilla-{log_num_vars}-{log_num_workers}"
+        remote_out_path = f"/home/ubuntu/projects/cirrus/{folder_path}"
+        ssh.exec_command(f"mkdir -p {remote_out_path}")
+
+        if instance_type == "master":
+            for file in circuit_files:
+                local_path = os.path.join(script_dir, "../", folder_path, file)
+                remote_path = os.path.join(remote_out_path, file)
+                print(f"Transferring {file} to {ip}:{remote_path}...")
+                sftp.put(local_path, remote_path)
+        elif instance_type == "worker":
+            for j in range(num_threads):  # Iterate to transfer files for each thread
+                worker_id = j + worker_id_start
+                worker_file = worker_files_pattern.format(worker_id=worker_id)
+                local_path = os.path.join(script_dir, "../", folder_path, worker_file)
+                remote_path = os.path.join(remote_out_path, worker_file)
+                print(f"Transferring {worker_file} to {ip}:{remote_path}...")
+                sftp.put(local_path, remote_path)
+        
+        sftp.close()
+        ssh.close()
+        print(f"Circuit files transfer complete on {ip}")
+    except (SSHException, IOError) as e:
+        print(f"Failed to transfer circuit files on {ip}: {e}")
+
+
 # Run the setup process on each EC2 instance in parallel
 # threads = []
 # master_ip = ec2_public_ips[0]  # First IP is the master
@@ -144,23 +178,47 @@ def transfer_circuit_files(ip, main_key_path, log_num_vars, log_num_workers, ins
 
 # print("Repo code transfer complete for all instances.")
 
+# # Transfer circuit files
+# num_workers = [1, 2, 3, 4, 5]
+# log_num_vars = [16, 17, 18, 19, 20, 21, 22]
+
+# for log_num_worker in num_workers:
+#     for log_num_var in log_num_vars:
+#         threads = []
+#         for i, ip in enumerate(ec2_public_ips[:1 + (1 << log_num_worker)]):
+#             if i == 0:
+#                 # Master instance
+#                 thread = threading.Thread(target=transfer_circuit_files, args=(ip, key_path, log_num_var, log_num_worker, "master"))
+#             else:
+#                 # Worker instances
+#                 worker_id = i - 1
+#                 thread = threading.Thread(target=transfer_circuit_files, args=(ip, key_path, log_num_var, log_num_worker, "worker", worker_id))
+#             thread.start()
+#             threads.append(thread)
+#         for thread in threads:
+#             thread.join()
+
 # Transfer circuit files
-num_workers = [1, 2, 3, 4, 5]
-log_num_vars = [16, 17, 18, 19, 20, 21, 22]
+num_workers = [4, 5]
+log_num_vars = [23, 24]
 
 for log_num_worker in num_workers:
     for log_num_var in log_num_vars:
+        num_total_instances = 1 + ((1 << log_num_worker) + 7) // 8  # Total number of instances including the master
         threads = []
-        for i, ip in enumerate(ec2_public_ips[:1 + (1 << log_num_worker)]):
+        for i, ip in enumerate(ec2_public_ips[:num_total_instances]):
             if i == 0:
                 # Master instance
-                thread = threading.Thread(target=transfer_circuit_files, args=(ip, key_path, log_num_var, log_num_worker, "master"))
+                thread = threading.Thread(target=transfer_circuit_files_single_thread, args=(ip, key_path, log_num_var, log_num_worker, "master"))
+                thread.start()
+                threads.append(thread)
             else:
                 # Worker instances
-                worker_id = i - 1
-                thread = threading.Thread(target=transfer_circuit_files, args=(ip, key_path, log_num_var, log_num_worker, "worker", worker_id))
-            thread.start()
-            threads.append(thread)
+                thread = threading.Thread(target=transfer_circuit_files_single_thread, args=(ip, key_path, log_num_var, log_num_worker, "worker", (i - 1)*8, min(1 << log_num_worker, 8)))
+                thread.start()
+                threads.append(thread)
+        
+        # Wait for all threads to complete
         for thread in threads:
             thread.join()
 
