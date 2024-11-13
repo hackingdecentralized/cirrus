@@ -1,15 +1,16 @@
 use std::time::Instant;
+use arithmetic::transpose;
 use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
 use hyperplonk::{
     errors::HyperPlonkErrors,
-    prelude::MockCircuit,
+    prelude::{MockCircuit, WitnessColumn},
     structs::{HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster, HyperPlonkVerifyingKey},
     HyperPlonkSNARKDistributed,
 };
 use std::{fs::File, path::PathBuf};
-use subroutines::{MasterProverChannelSocket, MultilinearKzgPCS, PolyIOP};
+use subroutines::{MasterProverChannel, MasterProverChannelSocket, MultilinearKzgPCS, PolyIOP};
 
 // Import all the pairing-friendly curves
 use ark_bn254::Bn254;
@@ -144,13 +145,25 @@ fn run_with_curve<E: Pairing>(
     let mut master_channel = MasterProverChannelSocket::new(log_num_workers);
     master_channel.connect_workers(&master_addr)?;
 
+    // Distribute the witnesses to the workers
+    let witnesses_distribution = circuit.witnesses
+        .iter()
+        .map(|w| {
+            w.0.chunks(1 << (pk_master.params.num_variables() - log_num_workers))
+                .map(|chunk| WitnessColumn(chunk.to_vec()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let witnesses_distribution = transpose(witnesses_distribution);
+    master_channel.send_different(witnesses_distribution)?;
+
+    // Prove the circuit
     let time = std::time::Instant::now();
 
     let proof: HyperPlonkProofDistributed<E, PolyIOP<<E as Pairing>::ScalarField>, MultilinearKzgPCS<E>> =
         PolyIOP::<<E as Pairing>::ScalarField>::prove_master(
             &pk_master,
             &circuit.public_inputs,
-            &circuit.witnesses,
             log_num_workers,
             &mut master_channel,
         )?;

@@ -23,7 +23,7 @@ use crate::{
         HyperPlonkProvingKeyWorker, HyperPlonkVerifyingKey,
     },
     utils::{
-        build_f_product, build_f_raw, eval_f, eval_perm_gate_distributed, prover_sanity_check,
+        build_f_product, build_f_raw, eval_f, eval_perm_gate_distributed,
         PcsAccumulatorMaster, PcsAccumulatorWorker,
     },
     HyperPlonkSNARKDistributed,
@@ -162,8 +162,7 @@ where
 
     fn prove_master(
         pk: &Self::ProvingKeyMaster,
-        pub_input: &[E::ScalarField],
-        witnesses: &[WitnessColumn<E::ScalarField>],
+        _pub_input: &[E::ScalarField],
         log_num_workers: usize,
         master_channel: &mut impl subroutines::MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors> {
@@ -171,7 +170,6 @@ where
 
         let mut transcript = IOPTranscript::<E::ScalarField>::new(b"cirrus");
 
-        prover_sanity_check(&pk.params, pub_input, witnesses)?;
         let num_vars = pk.params.num_variables();
         assert!(
             log_num_workers == master_channel.log_num_workers()
@@ -193,17 +191,8 @@ where
             num_vars >= log_num_workers + 1,
             "num_vars must be greater than log_num_workers"
         );
-        let witnesses_distribution = witnesses
-            .iter()
-            .map(|w| {
-                w.0.chunks(1 << (num_vars - log_num_workers))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        let witnesses_distribution = transpose(witnesses_distribution);
 
-        master_channel.send_different(witnesses_distribution)?;
-        let witness_commits = (0..witnesses.len())
+        let witness_commits = (0..pk.params.gate_func.num_witness_columns())
             .map(|_| PCS::commit_distributed_master(&pk.pcs_param, &num_vars, master_channel))
             .collect::<Result<Vec<_>, _>>()?;
         for w_com in witness_commits.iter() {
@@ -248,7 +237,7 @@ where
         let (perm_check_proof, prod_master) =
             <Self as PermutationCheckDistributed<E, PCS>>::prove_master(
                 &pk.pcs_param,
-                witnesses.len(),
+                pk.params.gate_func.num_witness_columns(),
                 num_vars,
                 &mut transcript,
                 master_channel,
@@ -361,6 +350,7 @@ where
 
     fn prove_worker(
         pk: &Self::ProvingKeyWorker,
+        witnesses: &[WitnessColumn<E::ScalarField>],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors> {
         let start = start_timer_with_timestamp!(format!(
@@ -379,10 +369,9 @@ where
             worker_channel.worker_id()
         ));
 
-        let witnesses: Vec<Vec<E::ScalarField>> = worker_channel.recv()?;
         let witness_polys = witnesses
-            .into_iter()
-            .map(|w| Arc::new(DenseMultilinearExtension::from_evaluations_vec(num_vars, w)))
+            .iter()
+            .map(|w| Arc::new(DenseMultilinearExtension::from_evaluations_vec(num_vars, w.0.clone())))
             .collect::<Vec<_>>();
 
         witness_polys
@@ -825,15 +814,27 @@ mod tests {
         let ((pk_master, pk_workers), vk) =
             PolyIOP::<E::ScalarField>::preprocess(&index, log_num_workers, &pcs_srs)?;
 
+        let witnesses = vec![w1.clone(), w2.clone()];
+        let witnesses_distribution = witnesses
+            .iter()
+            .map(|w| {
+                w.0.chunks(1 << (nv - log_num_workers))
+                    .map(|chunk| WitnessColumn(chunk.to_vec()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let witnesses_distribution = transpose(witnesses_distribution);
+
         let worker_handles = pk_workers
             .into_iter()
             .zip(worker_channels.into_iter())
-            .map(|(pk, mut channel)| {
+            .zip(witnesses_distribution.into_iter())
+            .map(|((pk, mut channel), witness)| {
                 spawn(move || {
                     <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
                         E,
                         MultilinearKzgPCS<E>,
-                    >>::prove_worker(&pk, &mut channel)
+                    >>::prove_worker(&pk, &witness, &mut channel)
                 })
             })
             .collect::<Vec<_>>();
@@ -844,7 +845,6 @@ mod tests {
         >>::prove_master(
             &pk_master,
             w1.clone().0[..num_pub_input].as_ref(),
-            &[w1.clone(), w2],
             log_num_workers,
             &mut master_channel,
         )?;

@@ -18,7 +18,6 @@ use arithmetic::{start_timer_with_timestamp, VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
 
@@ -307,17 +306,6 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let phase1_timer = start_timer_with_timestamp!("phase1; master");
         master_channel.send_uniform(b"sum check starting signal")?;
 
-        let worker_aux_infos: Vec<Self::VPAuxInfo> = master_channel.recv()?;
-
-        worker_aux_infos
-            .par_iter()
-            .map(|worker_aux_info| {
-                (worker_aux_info == &worker_poly_aux_info)
-                    .then_some(())
-                    .ok_or(PolyIOPErrors::WorkerNotMatching)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         for _ in 0..phase1 {
             master_channel.send_uniform(&challenge)?;
             let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
@@ -413,7 +401,6 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         if &start_data != b"sum check starting signal" {
             return Err(PolyIOPErrors::InvalidDistributedMessage);
         }
-        worker_channel.send(&poly.aux_info)?;
 
         let phase1_timer = start_timer_with_timestamp!(format!(
             "phase1; worker_id {}",

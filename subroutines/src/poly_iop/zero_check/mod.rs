@@ -159,6 +159,7 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::ZeroCheckProof, PolyIOPErrors> {
         let start = start_timer_with_timestamp!("Distributed zero check; master");
+        let prepare = start_timer_with_timestamp!("Distributed zero check prepare; master");
 
         let length = poly_aux_info.num_variables;
         let mut r = transcript.get_and_append_challenge_vectors(b"0check r", length)?;
@@ -171,17 +172,6 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
         // master_channel.send_uniform(b"zero check starting signal")?;
         master_channel.send_uniform(&r)?;
         master_channel.send_different(coeffs)?;
-
-        master_channel
-            .recv::<[u8; 32]>()
-            .unwrap()
-            .iter()
-            .map(|msg| {
-                (msg == b"zero check preparation completed")
-                    .then_some(())
-                    .ok_or(PolyIOPErrors::WorkerNotMatching)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
 
         let poly_aux_info = Self::VPAuxInfo {
             max_degree: poly_aux_info.max_degree + 1,
@@ -202,6 +192,8 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
             });
             x
         };
+
+        end_timer!(prepare);
 
         let res = <Self as SumCheckDistributed<F>>::prove_master(
             &poly_aux_info,
@@ -224,13 +216,10 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
             worker_channel.worker_id()
         ));
 
-        // let start_data: [u8; 26] = worker_channel.recv()?;
-        // if &start_data != b"zero check starting signal" {
-        //     return Err(PolyIOPErrors::InvalidProof(format!(
-        //         "zero check: invalid starting signal {:?}",
-        //         start_data
-        //     )));
-        // }
+        let prepare = start_timer_with_timestamp!(format!(
+            "Distributed zero check prepare; worker_id {}",
+            worker_channel.worker_id()
+        ));
 
         let r: Vec<F> = worker_channel.recv()?;
         let coeff: F = worker_channel.recv()?;
@@ -252,7 +241,8 @@ impl<F: PrimeField> ZeroCheckDistributed<F> for PolyIOP<F> {
             x
         };
 
-        worker_channel.send(b"zero check preparation completed")?;
+        end_timer!(prepare);
+
         let res = <Self as SumCheckDistributed<F>>::prove_worker(&poly, worker_channel);
 
         end_timer!(timer);
