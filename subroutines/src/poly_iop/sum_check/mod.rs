@@ -20,6 +20,8 @@ use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
+use ark_std::hint::black_box;
+use rand::{RngCore, rngs::OsRng};
 
 mod prover;
 mod verifier;
@@ -312,11 +314,22 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
             #[cfg(not(feature = "bench-master"))]
             let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
             #[cfg(feature = "bench-master")]
-            let worker_prover_msgs = vec![IOPProverMessage {
-                evaluations: vec![F::zero(); eval_len],
-            }; 1 << log_num_workers / phase1];
+            OsRng.fill_bytes(&mut [0u8; 16]);
+            
+            // println!("{}", 1 << (log_num_workers));
 
-            let evaluations =
+            #[cfg(feature = "bench-master")]
+            let worker_prover_msgs: Vec<IOPProverMessage<F>> = (0..(1 << log_num_workers))
+                .map(|_| {
+                    IOPProverMessage {
+                        evaluations: (0..eval_len)
+                            .map(|_| F::from((OsRng.next_u64() as u128)))
+                            .collect(),
+                    }
+                })
+                .collect();
+
+            let evaluations = 
                 worker_prover_msgs
                     .iter()
                     .fold(vec![F::zero(); eval_len], |ev1, ev2| {
@@ -351,7 +364,16 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
                 .unwrap_or(&0)
                 .clone() + 1;
             #[cfg(feature = "bench-master")]
-            let evals = vec![vec![F::zero(); num_mle]; 1 << log_num_workers];
+            OsRng.fill_bytes(&mut [0u8; 16]);
+
+            #[cfg(feature = "bench-master")]
+            let evals: Vec<Vec<F>> = (0..(1 << log_num_workers))
+                .map(|_| {
+                    (0..num_mle)
+                        .map(|_| F::from(OsRng.next_u64() as u128))
+                        .collect()
+                })
+                .collect();
 
             let len = evals
                 .get(0)

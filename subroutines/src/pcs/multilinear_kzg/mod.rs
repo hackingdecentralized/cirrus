@@ -36,6 +36,8 @@ use srs::{
     Evaluations, MultilinearProverParam, MultilinearUniversalParams, MultilinearVerifierParam,
 };
 use transcript::IOPTranscript;
+use ark_std::hint::black_box;
+use rand::{RngCore, rngs::OsRng};
 
 use self::batching::{batch_verify_internal, multi_open_internal};
 
@@ -303,15 +305,24 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         // commitments.iter().fold(E::G1Affine::from(1), |acc, x| acc * x.0);
 
         #[cfg(feature = "bench-master")]
-        let commitments = vec![E::G1Affine::default(); 1 << master_num_vars];
-
+        OsRng.fill_bytes(&mut [0u8; 16]);
+        
+        #[cfg(feature = "bench-master")]
+        let commitments: Vec<E::G1Affine> = (0..(1 << master_num_vars))
+            .map(|_| {
+                // Generate a random scalar and use it to scale the default G1Affine element
+                let random_scalar = <E as Pairing>::ScalarField::from(OsRng.next_u64() as u128);
+                E::G1Affine::from(E::G1Affine::default().mul(random_scalar))
+            })
+            .collect();
+        
         let msm_timer =
             start_timer_with_timestamp!(format!("msm of size {}; master", commitments.len()));
-        let commitment = E::G1::msm_unchecked(
+        let commitment = black_box(E::G1::msm_unchecked(
             &commitments,
             &vec![<E as Pairing>::ScalarField::from(1u128); 1 << master_num_vars],
         )
-        .into_affine();
+        .into_affine());
 
         end_timer!(msm_timer);
         end_timer!(timer);
@@ -421,13 +432,19 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
 
         #[cfg(not(feature = "bench-master"))]
         let evals: Vec<Self::Evaluation> = master_channel.recv()?;
-        #[cfg(feature = "bench-master")]
-        let evals = vec![E::ScalarField::zero(); 1 << master_num_vars];
 
-        let master_poly = Arc::new(DenseMultilinearExtension::from_evaluations_vec(
+        #[cfg(feature = "bench-master")]
+        OsRng.fill_bytes(&mut [0u8; 16]);
+
+        #[cfg(feature = "bench-master")]
+        let evals: Vec<E::ScalarField> = (0..(1 << master_num_vars))
+            .map(|_| E::ScalarField::from(OsRng.next_u64() as u128))
+            .collect();
+
+        let master_poly = black_box(Arc::new(DenseMultilinearExtension::from_evaluations_vec(
             master_num_vars,
             evals,
-        ));
+        )));
 
         let (proof, eval) =
             open_internal(master_prover_param.borrow(), &master_poly, master_points)?;
@@ -436,11 +453,25 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let worker_proofs: Vec<MultilinearKzgProof<E>> = master_channel.recv()?;
 
         #[cfg(feature = "bench-master")]
-        let worker_proofs: Vec<MultilinearKzgProof<E>> = vec![ MultilinearKzgProof {
-            proofs: vec![E::G1Affine::zero(); worker_num_vars],
-        }; (1 << master_num_vars) / worker_num_vars];
+        OsRng.fill_bytes(&mut [0u8; 16]);
 
-        let aggregated_proof = {
+        #[cfg(feature = "bench-master")]
+        let worker_proofs: Vec<MultilinearKzgProof<E>> = (0..((1 << master_num_vars)))
+            .map(|_| {
+                MultilinearKzgProof {
+                    proofs: (0..worker_num_vars)
+                        .map(|_| {
+                            // Generate a random u128 and convert it into the scalar field
+                            let random_scalar = <E as Pairing>::ScalarField::from(OsRng.next_u64() as u128);
+                            E::G1Affine::from(E::G1Affine::default().mul(random_scalar))
+                        })
+                        .collect()
+                }
+            })
+            .collect();
+        // let commitments = vec![E::G1Affine::from(E::G1Affine::default().mul(<E as Pairing>::ScalarField::from(100100101u128))); 1 << master_num_vars];
+
+        let aggregated_proof = black_box({
             let mut proofs_iter = worker_proofs
                 .into_iter()
                 .map(|x| x.proofs.into_iter())
@@ -460,7 +491,7 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
                 .collect::<Vec<_>>();
             x.extend(proof.proofs.iter());
             x
-        };
+        });
 
         end_timer!(timer);
 
@@ -574,7 +605,15 @@ impl<E: Pairing> PolynomialCommitmentSchemeDistributed<E> for MultilinearKzgPCS<
         let evals: Vec<Vec<Self::Evaluation>> = master_channel.recv()?;
 
         #[cfg(feature = "bench-master")]
-        let evals = vec![vec![E::ScalarField::zero(); k]; 1 << log_num_workers];
+        OsRng.fill_bytes(&mut [0u8; 16]);
+        #[cfg(feature = "bench-master")]
+        let evals: Vec<Vec<E::ScalarField>> = (0..(1 << log_num_workers))
+            .map(|_| {
+                (0..k)
+                    .map(|_| E::ScalarField::from(OsRng.next_u64() as u128))
+                    .collect()
+            })
+            .collect();
 
         let evals = transpose(evals)
             .into_iter()
