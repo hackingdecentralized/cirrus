@@ -1,8 +1,56 @@
 # Cirrus: Performant and Accountable Distributed SNARK with Linear Prover Time
 
-## Test master prover and worker prover
+## Run master prover and worker prover
 
-To run the master prover and worker prover, please follow the instructions in `scripts/run.sh`.
+To run, please first change `scripts/run.sh` to executable
+
+```bash
+> chmod +x scripts/run.sh
+```
+
+To run local experiments, first run the setup
+
+```bash
+> scripts/run.sh setup --log_num_workers $log_num_workers --log_num_vars $log_num_vars
+```
+
+### Run locally
+
+In one terminal, run the master
+
+```bash
+> scripts/run.sh run_master --log_num_workers $log_num_workers --log_num_vars $log_num_vars
+```
+
+You can find the log in the folder `out/vanilla-$log_num_vars-$log_num_workers`. After the log shows `Master listening on ...`, run the workers in another terminal
+
+```bash
+> scripts/run.sh run_multi_worker --log_num_workers $log_num_workers --log_num_vars $log_num_vars
+```
+
+### Run on multiple machines
+
+Make sure you have sent the keys to the corresponding master or worker.
+
+On the master machine, run
+
+```bash
+> scripts/run.sh run_master --log_num_workers $log_num_workers --log_num_vars $log_num_vars --master_addr $master_addr:$master_listen_port
+```
+
+On each worker node, run
+
+```bash
+> scripts/run.sh run_single_worker --log_num_workers $log_num_workers --log_num_vars $log_num_vars --master_addr $master_addr:$master_listen_port
+```
+
+### Analyze results
+
+To analyze the final log of the master, run
+
+```bash
+> scripts/run.sh analyze --log_num_workers $log_num_workers --log_num_vars $log_num_vars --analyze_target master
+```
 
 ## Disclaimer
 

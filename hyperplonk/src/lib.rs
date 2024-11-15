@@ -134,7 +134,6 @@ where
     fn prove_master(
         pk: &Self::ProvingKeyMaster,
         pub_input: &[E::ScalarField],
-        witnesses: &[WitnessColumn<E::ScalarField>],
         log_num_worker: usize,
         master_channel: &mut impl MasterProverChannel,
     ) -> Result<Self::Proof, HyperPlonkErrors>;
@@ -146,6 +145,7 @@ where
     /// - `worker_channel`: worker prover channel
     fn prove_worker(
         pk: &Self::ProvingKeyWorker,
+        witnesses: &[WitnessColumn<E::ScalarField>],
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), HyperPlonkErrors>;
 

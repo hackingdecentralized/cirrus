@@ -13,46 +13,17 @@ key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-    "23.22.219.232",
-    "34.230.29.94",
-    "34.228.79.107",
-    '54.144.50.197',
-    '23.22.232.175',
-    '54.87.4.182',
-    '98.80.8.31',
-    '54.152.74.154',
-    '54.164.223.244',
-    '3.91.190.135',
-    '54.87.27.71',
-    '54.196.217.135',
-    '54.167.4.15',
-    '34.236.155.14',
-    '34.227.226.47',
-    '54.210.54.145',
-    '34.224.166.48',
-    '3.80.195.113',
-    '54.160.211.46',
-    '54.167.0.186',
-    '54.196.4.150',
-    '54.221.18.232',
-    '107.20.128.104',
-    '52.23.234.30',
-    '3.89.211.109',
-    '3.80.75.193',
-    '3.91.16.200',
-    '52.72.195.18',
-    '54.226.5.208',
-    '54.87.223.134',
-    '54.242.56.55',
-    '34.207.210.134',
-    '54.235.232.106',
+    "54.166.156.21",
+    "3.94.193.121",
+    "54.198.178.147"
 ]
 
 # Path to the bash file with commands
-setup_cmd = os.path.join(script_dir, "setup.sh")
+setup_cmd = os.path.join(script_dir, "setup_hekaton.sh")
 
 # Local path to the `cirrus.zip` file
-local_zip_path = "../cirrus.zip"
+local_zip_path = "../hekaton.zip"
+remote_zip_path = "/home/ubuntu/hekaton.zip"
 
 def load_commands_from_file(file_path):
     """Load commands from a bash file."""
@@ -77,7 +48,6 @@ def transfer_and_setup_repo(ip, main_key_path, local_zip_path, commands):
 
         # Open an SFTP session and transfer the zip file
         sftp = ssh.open_sftp()
-        remote_zip_path = "/home/ubuntu/cirrus.zip"
         print(f"Transferring {local_zip_path} to {ip}:{remote_zip_path}...")
         sftp.put(local_zip_path, remote_zip_path)
         sftp.close()

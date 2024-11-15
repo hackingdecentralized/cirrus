@@ -1,3 +1,4 @@
+use arithmetic::transpose;
 use ark_ec::pairing::Pairing;
 use ark_std::test_rng;
 use hyperplonk::{prelude::*, HyperPlonkSNARKDistributed};
@@ -11,6 +12,12 @@ type E = ark_bls12_381::Bls12_381;
 type Fr = <E as Pairing>::ScalarField;
 
 fn main() -> Result<(), HyperPlonkErrors> {
+    #[cfg(feature = "print-trace")]
+    {
+        println!("Benchmarking with feature print-trace isn't supported");
+        return Ok(())
+    }
+
     let mut rng = test_rng();
     let pcs_srs = MultilinearKzgPCS::<E>::gen_srs_for_testing(&mut rng, 24)?;
 
@@ -24,22 +31,7 @@ fn main() -> Result<(), HyperPlonkErrors> {
 fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), HyperPlonkErrors> {
     let log_num_workers = 1;
 
-    // 10                      101.615046ms
-    // 12                      175.623884ms
-    // 14                      417.227933ms
-    // 16                      1.501711079s
-    // 18                      5.236924166s
-    // 20                      17.781407801s      51s    1->  num_thread=4   4->8
-    // round1: 2^20    -> 2^(20 - 3)
-    //
-    // round15: 2^(20 - 3 - 15)
-    // 22                      65.105407385s
-    // 24                      261.2209262s
-
-    let start = Instant::now();
-
     let gate = CustomizedGates::vanilla_plonk_gate();
-
     let circuit = MockCircuit::<Fr>::new(1 << nv, &gate);
     assert!(circuit.is_satisfied());
     let index = circuit.index;
@@ -52,23 +44,36 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
         MultilinearKzgPCS<E>,
     >>::preprocess(&index, log_num_workers, &pcs_srs)?;
 
+    let witnesses_distribution = circuit.witnesses
+        .iter()
+        .map(|w| {
+            w.0.chunks(1 << (nv - log_num_workers))
+                .map(|chunk| WitnessColumn(chunk.to_vec()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let witnesses_distribution = transpose(witnesses_distribution);
+
     let worker_handles = pk_workers
         .into_iter()
         .zip(worker_channels.into_iter())
-        .map(|(pk, mut channel)| {
+        .zip(witnesses_distribution.into_iter())
+        .map(|((pk, mut channel), witness)| {
             spawn(move || {
                 <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(
                     &pk,
+                    &witness,
                     &mut channel,
                 )
             })
         })
         .collect::<Vec<_>>();
 
+    let start = Instant::now();
+
     let proof = <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_master(
         &pk_master,
         &circuit.public_inputs,
-        &circuit.witnesses,
         log_num_workers,
         &mut master_channel,
     )?;

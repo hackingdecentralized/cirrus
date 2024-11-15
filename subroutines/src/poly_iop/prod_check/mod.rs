@@ -487,11 +487,11 @@ where
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(Self::MultilinearExtension, Self::MultilinearExtension), PolyIOPErrors> {
         let start = start_timer_with_timestamp!(format!(
-            "Distribution product check; worker_id {}",
+            "Distributed product check; worker_id {}",
             worker_channel.worker_id()
         ));
         let preparation = start_timer_with_timestamp!(format!(
-            "Distribution product check preparation; worker_id {}",
+            "Distributed product check preparation; worker_id {}",
             worker_channel.worker_id()
         ));
 

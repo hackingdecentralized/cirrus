@@ -3,10 +3,10 @@ use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
 use hyperplonk::{
-    errors::HyperPlonkErrors, structs::HyperPlonkProvingKeyWorker, HyperPlonkSNARKDistributed,
+    errors::HyperPlonkErrors, prelude::WitnessColumn, structs::HyperPlonkProvingKeyWorker, HyperPlonkSNARKDistributed
 };
 use std::{fs::File, path::PathBuf};
-use subroutines::{MultilinearKzgPCS, PolyIOP, WorkerProverChannelSocket};
+use subroutines::{MultilinearKzgPCS, PolyIOP, WorkerProverChannel, WorkerProverChannelSocket};
 
 // Import all the pairing-friendly curves
 use ark_bn254::Bn254;
@@ -95,5 +95,6 @@ fn run_with_curve<E: Pairing>(
 
     let mut worker_channel = WorkerProverChannelSocket::bind(&master_addr, worker_id).unwrap();
 
-    PolyIOP::<<E as Pairing>::ScalarField>::prove_worker(&pk_worker, &mut worker_channel)
+    let witness: Vec<WitnessColumn<_>> = worker_channel.recv()?;
+    PolyIOP::<<E as Pairing>::ScalarField>::prove_worker(&pk_worker, &witness, &mut worker_channel)
 }

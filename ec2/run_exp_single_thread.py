@@ -17,12 +17,44 @@ master_ip = "54.166.156.21"
 master_private_addr = "172.31.119.134"
 master_listen_port = 7034
 worker_ips = [
-    #worker addresses
+    "54.82.65.157",
+    "18.209.22.83",
+    "54.167.25.218",
+    "3.94.198.250",
+    "34.203.200.225",
+    "34.229.125.185",
+    "54.163.222.169",
+    "54.167.4.21",
+    "34.228.115.220",
+    "18.209.9.201",
+    "50.19.29.91",
+    "54.90.144.167",
+    "54.163.47.82",
+    "18.212.77.123",
+    "54.167.25.142",
+    "54.167.61.96",
+    "18.208.190.100",
+    "34.229.177.155",
+    "18.208.190.120",
+    "54.210.58.114",
+    "3.88.47.236",
+    "50.17.118.255",
+    "54.210.180.15",
+    "107.23.116.39",
+    "54.152.208.71",
+    "34.229.200.183",
+    "3.90.110.98",
+    "54.82.41.158",
+    "52.207.80.134",
+    "54.197.158.85",
+    "54.235.29.78",
+    "34.228.15.29"
 ]
 
 # Define the configurations for log_num_workers and log_num_vars
-log_num_workers_configs = [4, 3, 2, 1]  # Example configurations for log_num_workers
-log_num_vars_configs = [16, 17, 18, 19, 20, 21, 22]  # Example configurations for log_num_vars
+log_num_workers_configs = [8]  # Example configurations for log_num_workers
+log_num_vars_configs = [19, 20, 21]  # Example configurations for log_num_vars
+curve = "bls12_381"
 
 # Function to create SSH client
 def create_ssh_client(ip):
@@ -59,39 +91,18 @@ def run_test():
         for log_num_vars in log_num_vars_configs:
             print(f"Running test with log_num_workers={log_num_workers}, log_num_vars={log_num_vars}")
 
-            # Calculate the number of workers to use based on log_num_workers
+            # Calculate the number of workers needed based on log_num_workers
             num_workers = 1 << log_num_workers  # 2^log_num_workers
-            selected_worker_ips = worker_ips[:num_workers]  # Select the required number of worker IPs
+            selected_worker_ips = worker_ips[:(num_workers + 7) // 8]  # Select the required number of worker IPs, rounding up to allocate one machine per 8 workers
 
             # Check if we have enough worker IPs
-            if len(selected_worker_ips) < num_workers:
-                print(f"Not enough worker IPs. Required: {num_workers}, Available: {len(selected_worker_ips)}")
+            if len(selected_worker_ips) < (num_workers + 7) // 8:
+                print(f"Not enough worker IPs. Required: {(num_workers + 7) // 8}, Available: {len(selected_worker_ips)}")
                 continue
-
-            # Setup command for master and each worker with sourcing cargo environment
-            setup_cmd = f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh setup --log_num_workers {log_num_workers} --log_num_vars {log_num_vars}"
-            
-            # # Start setup threads for both master and workers
-            # setup_threads = []
-            
-            # # Master setup thread
-            # master_thread = threading.Thread(target=run_command_in_thread, args=(master_ip, setup_cmd))
-            # setup_threads.append(master_thread)
-            # master_thread.start()
-            
-            # # Worker setup threads
-            # for worker_ip in selected_worker_ips:
-            #     worker_thread = threading.Thread(target=run_command_in_thread, args=(worker_ip, setup_cmd))
-            #     setup_threads.append(worker_thread)
-            #     worker_thread.start()
-
-            # # Wait for all setup threads to complete
-            # for thread in setup_threads:
-            #     thread.join()
 
             # Start master node in a separate thread
             run_master_cmd = [
-                f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh run_master --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} --master_addr {master_private_addr}:{master_listen_port}"
+                f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh run_master --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} --master_addr {master_private_addr}:{master_listen_port} --curve {curve}"
             ]
             master_thread = threading.Thread(target=run_command_in_thread, args=(master_ip, " && ".join(run_master_cmd)))
             master_thread.start()
@@ -99,39 +110,54 @@ def run_test():
             # Wait briefly before setting up and starting workers in parallel
             time.sleep(1 << (max(1, log_num_vars - 14)))
             
-            # Start each worker node run command in parallel
             worker_threads = []
-            for worker_id, worker_ip in enumerate(selected_worker_ips):
-                # Run command for each worker
-                run_worker_cmd = [
-                    f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh run_single_worker --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} --master_addr {master_ip}:{master_listen_port} --worker_id {worker_id}"
-                ]
-                worker_thread = threading.Thread(target=run_command_in_thread, args=(worker_ip, " && ".join(run_worker_cmd)))
+            for j, worker_ip in enumerate(selected_worker_ips):
+                commands = []
+                for i in range(min(8, 1 << log_num_workers)):  # Each worker machine runs up to 8 worker programs
+                    worker_id = j * 8 + i
+                    run_worker_cmd = (
+                        f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh run_single_worker "
+                        f"--num_threads 1 --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} "
+                        f"--master_addr {master_private_addr}:{master_listen_port} --worker_id {worker_id} --curve {curve}"
+                    )
+                    commands.append(run_worker_cmd)
+            
+                # Join commands to run concurrently in a single SSH connection
+                combined_command = " & ".join(commands)
+                worker_thread = threading.Thread(target=run_command_in_thread, args=(worker_ip, combined_command))
                 worker_thread.start()
                 worker_threads.append(worker_thread)
-                time.sleep(1 << (max(1, log_num_vars - 19)))
+                time.sleep(1)
 
             # Wait for all threads (master and workers) to complete
             master_thread.join()
             for worker_thread in worker_threads:
                 worker_thread.join()
-            
-            # start analyze command in parallel
+
+            # Start analyze command in parallel
             analyze_master_cmd = [
                 f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh analyze --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} --analyze_target master"
             ]
             master_analyze_thread = threading.Thread(target=run_command_in_thread, args=(master_ip, " && ".join(analyze_master_cmd)))
             master_analyze_thread.start()
-            
+
             worker_analyze_threads = []
             for worker_id, worker_ip in enumerate(selected_worker_ips):
-                analyze_worker_cmd = [
-                    f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh analyze --log_num_workers {log_num_workers} --log_num_vars {log_num_vars} --analyze_target worker_{worker_id}"
-                ]
-                worker_analyze_thread = threading.Thread(target=run_command_in_thread, args=(worker_ip, " && ".join(analyze_worker_cmd)))
+                analyze_commands = []
+                for i in range(min(8, 1 << log_num_workers)):  # Analyze each worker program
+                    analyze_worker_cmd = (
+                        f"source ~/.cargo/env && cd /home/ubuntu/projects/cirrus && ./scripts/run.sh analyze "
+                        f"--log_num_workers {log_num_workers} --log_num_vars {log_num_vars} "
+                        f"--analyze_target worker_{worker_id * 8 + i}"
+                    )
+                    analyze_commands.append(analyze_worker_cmd)
+
+                # Join analyze commands to run concurrently in a single SSH connection
+                combined_analyze_command = " & ".join(analyze_commands) + " & wait"
+                worker_analyze_thread = threading.Thread(target=run_command_in_thread, args=(worker_ip, combined_analyze_command))
                 worker_analyze_thread.start()
                 worker_analyze_threads.append(worker_analyze_thread)
-            
+
             master_analyze_thread.join()
             for worker_analyze_thread in worker_analyze_threads:
                 worker_analyze_thread.join()
