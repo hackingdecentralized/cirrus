@@ -136,7 +136,7 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
         ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
         sftp = ssh.open_sftp()
         
-        folder_path = f"out/vanilla-{log_num_vars}-{log_num_workers}"
+        folder_path = f"out/vanilla-bn254-{log_num_vars}-{log_num_workers}"
         remote_out_path = f"/home/ubuntu/projects/cirrus/{folder_path}"
         ssh.exec_command(f"mkdir -p {remote_out_path}")
 
@@ -199,8 +199,8 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
 #             thread.join()
 
 # Transfer circuit files
-num_workers = [4, 5]
-log_num_vars = [23, 24]
+num_workers = [4, 5, 6, 7, 8]
+log_num_vars = [19, 20, 21, 22, 23, 24]
 
 for log_num_worker in num_workers:
     for log_num_var in log_num_vars:

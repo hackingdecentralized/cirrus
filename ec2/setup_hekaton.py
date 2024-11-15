@@ -13,22 +13,39 @@ key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-    "18.208.190.100",
-    "34.229.177.155",
-    "18.208.190.120",
-    "54.210.58.114",
-    "3.88.47.236",
-    "50.17.118.255",
-    "54.210.180.15",
-    "107.23.116.39",
-    "54.152.208.71",
-    "34.229.200.183",
-    "3.90.110.98",
-    "54.82.41.158",
-    "52.207.80.134",
-    "54.197.158.85",
-    "54.235.29.78",
-    "34.228.15.29"
+    "54.166.156.21",
+    "3.84.242.172",
+    "18.208.139.209",
+    '34.204.18.137',
+    '34.230.90.177',
+    '107.21.71.201',
+    '34.229.174.213',
+    '18.212.85.139',
+    '3.88.29.42',
+    '3.88.176.34',
+    '3.87.144.97',
+    '34.230.76.160',
+    '54.226.157.229',
+    '54.226.180.80',
+    '3.80.90.117',
+    '3.93.173.183',
+    '54.144.51.242',
+    '3.90.183.81',
+    '3.84.176.156',
+    '184.73.132.182',
+    '34.229.179.9',
+    '54.196.137.12',
+    '98.81.77.93',
+    '107.21.180.96',
+    '54.210.74.1',
+    '98.84.116.117',
+    '54.86.122.167',
+    '54.91.62.79',
+    '3.80.73.157',
+    '18.212.75.158',
+    '54.145.25.223',
+    '54.221.170.67',
+    '52.90.223.230',
 ]
 
 ec2_public_ips_tmp = ["54.198.178.147",]
@@ -107,35 +124,35 @@ def transfer_circuit_files(ip, main_key_path):
         ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
         sftp = ssh.open_sftp()
         
-        num_subcircuits_values = [128, 256, 512]
-        local_path =["/home/wenhaowang/projects/cirrus/cirrus/bin/hyperplonk.rs",
-                     "/home/wenhaowang/projects/cirrus/cirrus/bin/master.rs",
-                     "/home/wenhaowang/projects/cirrus/cirrus/bin/setup.rs",
-                     "/home/wenhaowang/projects/cirrus/cirrus/bin/worker.rs",
-                     "/home/wenhaowang/projects/cirrus/cirrus/Cargo.toml",
-                     "/home/wenhaowang/projects/cirrus/scripts/run.sh"]
-        remote_path = ["/home/ubuntu/projects/cirrus/cirrus/bin/hyperplonk.rs",
-                     "/home/ubuntu/projects/cirrus/cirrus/bin/master.rs",
-                     "/home/ubuntu/projects/cirrus/cirrus/bin/setup.rs",
-                     "/home/ubuntu/projects/cirrus/cirrus/bin/worker.rs",
-                     "/home/ubuntu/projects/cirrus/cirrus/Cargo.toml",
-                     "/home/ubuntu/projects/cirrus/scripts/run.sh"]
-        for path1, path2 in zip(local_path, remote_path):
-            print(f"Transferring {path1} to {ip}:{path2}...")
-            sftp.put(path1, path2)
+        num_subcircuits_values = [1024, 2048]
+        # local_path =["/home/wenhaowang/projects/cirrus/cirrus/bin/hyperplonk.rs",
+        #              "/home/wenhaowang/projects/cirrus/cirrus/bin/master.rs",
+        #              "/home/wenhaowang/projects/cirrus/cirrus/bin/setup.rs",
+        #              "/home/wenhaowang/projects/cirrus/cirrus/bin/worker.rs",
+        #              "/home/wenhaowang/projects/cirrus/cirrus/Cargo.toml",
+        #              "/home/wenhaowang/projects/cirrus/scripts/run.sh"]
+        # remote_path = ["/home/ubuntu/projects/cirrus/cirrus/bin/hyperplonk.rs",
+        #              "/home/ubuntu/projects/cirrus/cirrus/bin/master.rs",
+        #              "/home/ubuntu/projects/cirrus/cirrus/bin/setup.rs",
+        #              "/home/ubuntu/projects/cirrus/cirrus/bin/worker.rs",
+        #              "/home/ubuntu/projects/cirrus/cirrus/Cargo.toml",
+        #              "/home/ubuntu/projects/cirrus/scripts/run.sh"]
+        # for path1, path2 in zip(local_path, remote_path):
+        #     print(f"Transferring {path1} to {ip}:{path2}...")
+        #     sftp.put(path1, path2)
 
-        # for num_subcircuits in num_subcircuits_values:
-        #     num_sha2_iters = 1
-        #     folder_path = f"/home/wenhaowang/projects/hekaton-fork/out/pks-big-merkle-{num_subcircuits}_{num_sha2_iters}_7"
-        #     remote_out_path = f"/home/ubuntu/projects/hekaton-fork/out/pks-big-merkle-{num_subcircuits}_{num_sha2_iters}_7"
-        #     ssh.exec_command(f"mkdir -p {remote_out_path}")
+        for num_subcircuits in num_subcircuits_values:
+            num_sha2_iters = 1
+            folder_path = f"/home/wenhaowang/projects/hekaton-fork/out/pks-big-merkle-{num_subcircuits}_{num_sha2_iters}_7"
+            remote_out_path = f"/home/ubuntu/projects/hekaton-fork/out/pks-big-merkle-{num_subcircuits}_{num_sha2_iters}_7"
+            ssh.exec_command(f"mkdir -p {remote_out_path}")
 
-        #     for file in os.listdir(folder_path):
-        #         if file.endswith("key.bin"):
-        #             local_path = os.path.join(folder_path, file)
-        #             remote_path = os.path.join(remote_out_path, file)
-        #             print(f"Transferring {local_path} to {ip}:{remote_path}...")
-        #             sftp.put(local_path, remote_path)
+            for file in os.listdir(folder_path):
+                if file.endswith("key.bin"):
+                    local_path = os.path.join(folder_path, file)
+                    remote_path = os.path.join(remote_out_path, file)
+                    print(f"Transferring {local_path} to {ip}:{remote_path}...")
+                    sftp.put(local_path, remote_path)
         
         sftp.close()
         ssh.close()
