@@ -12,13 +12,13 @@ use crate::{
         structs::{IOPProof, IOPProverMessage, IOPProverState, IOPVerifierState},
         PolyIOP,
     },
-    MasterProverChannel, WorkerProverChannel,
+    MasterProverChannel, WorkerProverChannel, Orchestrator
 };
-use arithmetic::{start_timer_with_timestamp, VPAuxInfo, VirtualPolynomial};
+use arithmetic::{start_timer_with_timestamp, ArithErrors, OnDiskPolynomial, VPAuxInfo, VirtualPolynomial};
 use ark_ff::PrimeField;
 use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc, thread};
 use transcript::IOPTranscript;
 
 mod prover;
@@ -101,6 +101,208 @@ pub trait SumCheckDistributed<F: PrimeField>: SumCheck<F> {
         poly: &Self::VirtualPolynomial,
         worker_channel: &mut impl WorkerProverChannel,
     ) -> Result<(), PolyIOPErrors>;
+}
+
+/// A trait for performing the cirrus sumcheck in a single-machine setting
+pub trait SumCheckLowMem<F: PrimeField>: SumCheck<F> {
+    /// Prove the sum of a polynomial over `{0,1}^num_vars` using a 
+    /// single machine with "low memory" (Cirrus-like). 
+    /// 
+    /// `log_num_workers`: 
+    ///   Number of (virtual) workers is `2^log_num_workers`.
+    ///
+    /// Returns:
+    ///   The IOP proof for the sumcheck.
+    fn prove_master_single_machine_low_mem(
+        poly_aux_info: &Self::VPAuxInfo,
+        poly_products: &[(F, Vec<usize>)],
+        log_num_workers: usize,
+        transcript: &mut Self::Transcript,
+        // The parameters below are an example of what you might need to pass
+        // in to actually load worker polynomials from disk or from some data source.
+        orchestrator: &mut Orchestrator,
+    ) -> Result<Self::SumCheckProof, PolyIOPErrors>;
+}
+
+impl<F: PrimeField> SumCheckLowMem<F> for PolyIOP<F> {
+    fn prove_master_single_machine_low_mem(
+        poly_aux_info: &Self::VPAuxInfo,
+        poly_products: &[(F, Vec<usize>)],
+        log_num_workers: usize,
+        transcript: &mut Self::Transcript,
+        orchestrator: &mut Orchestrator,
+    ) -> Result<Self::SumCheckProof, PolyIOPErrors> {
+
+        // --- Preliminary checks / environment prep ---
+        let overall_timer = start_timer!("sumcheck single-machine low-mem: master");
+        if orchestrator.log_num_workers != log_num_workers {
+            return Err(PolyIOPErrors::InvalidWorkerNumber);
+        }
+
+        let worker_poly_aux_info = Self::VPAuxInfo {
+            num_variables: poly_aux_info.num_variables - log_num_workers,
+            ..poly_aux_info.clone()
+        };
+
+        let mut next_read_handle = Some(thread::spawn({
+            move || {
+                OnDiskPolynomial::<F>::load(&orchestrator.worker_files[0])
+            }
+        }));
+        let mut next_write_handle = None;
+
+        // For convenience, define how many variables each "worker polynomial" has,
+        // which is `phase1 = poly_aux_info.num_variables - log_num_workers`.
+        let phase1 = poly_aux_info.num_variables - log_num_workers;
+        let phase2 = log_num_workers;
+
+        transcript.append_serializable_element(b"aux info", poly_aux_info)?;
+
+        // This will store the final aggregator messages from the first phase
+        let mut prover_msgs: Vec<IOPProverMessage<F>> = Vec::with_capacity(poly_aux_info.num_variables);
+        let mut challenges = Vec::with_capacity(poly_aux_info.num_variables);
+
+        // Keep track of the ongoing challenge
+        let mut current_challenge = None;
+
+        // Because the aggregator messages have length = (degree + 1).
+        // In your code, you'd want to compute or reuse the actual length:
+        let eval_len = poly_aux_info.max_degree + 1;
+
+        // === Phase 1: Worker polynomials loaded from disk, round by round ===
+        //
+        // For each round i in 0..phase1, we:
+        //   1. For each worker k in 0..2^log_num_workers:
+        //      - Load that worker’s polynomial from disk
+        //      - Reconstruct the partial IOPProverState
+        //      - Compute the ProverMessage for round i
+        //      - Accumulate partial evaluations into aggregator
+        //   2. Append aggregator’s message to the transcript
+        //   3. Derive the next challenge from the transcript
+
+        let mut worker_poly = VirtualPolynomial::<F>::new(worker_poly_aux_info.num_variables);
+        let mut worker_disk_poly = OnDiskPolynomial::<F>::from(worker_poly);
+
+        for round_index in 0..phase1 {
+            // aggregator_evals accumulates the sum of each worker’s round message
+            let mut aggregator_evals = vec![F::zero(); eval_len];
+            
+
+            for worker_id in 0..(1 << log_num_workers) {
+                // 1. Load the worker’s polynomial from disk
+                let worker_poly_result = next_read_handle
+                    .take() // Take ownership of the current handle (Option::take -> Option<T>)
+                    .expect("next_poly_handle was None but we still have workers left!")
+                    .join(); // Wait for the background thread to finish
+
+                // Check the result of the thread and the result of loading
+                worker_disk_poly = match worker_poly_result {
+                    Ok(Ok(poly)) => poly,        // The background thread succeeded in reading from disk
+                    Ok(Err(e))   => return Err(PolyIOPErrors::InvalidDiskPoly), // The background thread returned an error
+                    Err(e)       => {
+                        // The thread panicked. Convert or propagate as needed
+                        return Err(PolyIOPErrors::InvalidDiskPoly);
+                    }
+                };
+                
+                worker_poly = VirtualPolynomial::<F>::from(worker_disk_poly);
+
+                // 2. Build a short-term ProverState for this worker
+                //    so that we can do the single round of sumcheck for worker_poly.
+                //    In actual usage, you may want a specialized function that 
+                //    only does a single round's worth of work, instead of
+                //    building the entire IOPProverState (which might be heavier).
+                let mut worker_prover_state = IOPProverState::prover_init(&worker_poly)?;
+
+                // 3. Perform the single round of proof. This is basically:
+                let prover_msg = IOPProverState::prove_round_and_update_state(
+                    &mut worker_prover_state, 
+                    &current_challenge
+                )?;
+
+                // 4. Add the worker’s round evaluations to aggregator
+                for (i, &e) in prover_msg.evaluations.iter().enumerate() {
+                    aggregator_evals[i] += e;
+                }
+
+                // We do not store worker_prover_state across rounds in memory; 
+                // it's thrown away after this step. The next time we come back 
+                // to the same worker in the next round, we reload from disk again 
+                // and do the same partial step.
+                // TODO: check if the memory is really dropped here
+                next_read_handle = Some(thread::spawn({
+                    move || {
+                        OnDiskPolynomial::<F>::load(&orchestrator.worker_files[(round_index + 1) % (1<<orchestrator.log_num_workers)])
+                    }
+                }));
+                worker_disk_poly = OnDiskPolynomial::<F>::from(worker_poly);
+                next_write_handle = Some(thread::spawn({
+                    move || {
+                        worker_disk_poly.store(&orchestrator.worker_files[round_index])
+                    }
+                }));
+            }
+
+            // 5. Convert aggregator_evals -> aggregator_msg
+            let aggregator_msg = IOPProverMessage {
+                evaluations: aggregator_evals,
+            };
+
+            // 6. Append aggregator_msg to transcript
+            transcript.append_serializable_element(b"prover msg", &aggregator_msg)?;
+            prover_msgs.push(aggregator_msg);
+
+            // 7. Derive next challenge
+            current_challenge = Some(transcript.get_and_append_challenge(b"Internal round")?);
+            if let Some(c) = current_challenge {
+                challenges.push(c);
+            }
+        }
+
+        // === End of Phase 1 ===
+        // Now we do Phase 2 using the master polynomial. 
+        // As in your existing code, you "construct" the reduced polynomial 
+        // from the aggregator’s final evaluation of Phase 1, 
+        // then perform the usual single-machine sumcheck on those remaining 
+        // `phase2` variables.
+
+        // 1. Construct the master polynomial from the aggregator result
+        let master_poly_aux_info = {
+            let mut info = poly_aux_info.clone();
+            info.num_variables = phase2;
+            info
+        };
+        // Suppose you build the MLE for these phase2 variables in some aggregator way:
+        // The details depend on your approach for merging partial polynomials.
+
+        // ... build `master_poly` of type VirtualPolynomial from the partial aggregator
+        let master_poly = build_master_poly(..., &master_poly_aux_info, poly_products)?;
+
+        // 2. Proceed with standard SumCheck for these final phase2 rounds:
+        let mut master_prover_state = IOPProverState::prover_init(&master_poly)?;
+        let mut local_challenge = current_challenge; // carry over from phase1
+        for _round in 0..phase2 {
+            let prover_msg = IOPProverState::prove_round_and_update_state(
+                &mut master_prover_state,
+                &local_challenge,
+            )?;
+            transcript.append_serializable_element(b"prover msg", &prover_msg)?;
+            prover_msgs.push(prover_msg);
+
+            local_challenge = Some(transcript.get_and_append_challenge(b"Internal round")?);
+            if let Some(c) = local_challenge {
+                challenges.push(c);
+            }
+        }
+
+        // Done; we return the combined IOPProof
+        end_timer!(overall_timer);
+
+        Ok(IOPProof {
+            point: challenges,
+            proofs: prover_msgs,
+        })
+    }
 }
 
 /// Trait for sum check protocol prover side APIs.

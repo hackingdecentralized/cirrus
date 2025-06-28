@@ -85,7 +85,7 @@ where
 /// A trait for distributed HyperPlonk SNARKs(Cirrus).
 /// A distributed HyperPlonk is derived from distributed version
 /// of ZeroChecks and PermutationChecks.
-pub trait HyperPlonkSNARKDistributed<E, PCS>: PermutationCheckDistributed<E, PCS>
+pub trait Cirrus<E, PCS>: PermutationCheckDistributed<E, PCS>
 where
     E: Pairing,
     PCS: PolynomialCommitmentSchemeDistributed<E>,

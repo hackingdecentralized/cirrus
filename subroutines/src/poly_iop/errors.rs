@@ -43,6 +43,8 @@ pub enum PolyIOPErrors {
     WorkerNotMatching,
     /// Invalid PolyIOP distributed message
     InvalidDistributedMessage,
+    /// Invalid Disk Polynomial
+    InvalidDiskPoly,
 }
 
 impl From<ark_serialize::SerializationError> for PolyIOPErrors {

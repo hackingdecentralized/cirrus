@@ -6,9 +6,13 @@
 
 //! This module defines structs that are shared by all sub protocols.
 
-use arithmetic::VirtualPolynomial;
+use arithmetic::{OnDiskPolynomial, VirtualPolynomial};
 use ark_ff::PrimeField;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter};
+use std::path::PathBuf;
+use crate::PolyIOPErrors;
 
 /// An IOP proof is a collections of
 /// - messages from prover to verifier at each round through the interactive
@@ -38,6 +42,81 @@ pub struct IOPProverState<F: PrimeField> {
     /// points with precomputed barycentric weights for extrapolating smaller
     /// degree uni-polys to `max_degree + 1` evaluations.
     pub(crate) extrapolation_aux: Vec<(Vec<F>, Vec<F>)>,
+}
+
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+pub struct OnDiskIOPProverState<F: PrimeField> {
+    /// sampled randomness given by the verifier
+    pub challenges: Vec<F>,
+    /// the current round number
+    pub(crate) round: usize,
+    /// pointer to the virtual polynomial
+    pub(crate) poly: OnDiskPolynomial<F>,
+    /// points with precomputed barycentric weights for extrapolating smaller
+    /// degree uni-polys to `max_degree + 1` evaluations.
+    pub(crate) extrapolation_aux: Vec<(Vec<F>, Vec<F>)>,
+}
+
+impl<F: PrimeField> OnDiskIOPProverState<F> {
+    pub fn store(self, path: &PathBuf) -> Result<(), PolyIOPErrors> {
+        // 1) Open or create the file for writing
+        let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|e| PolyIOPErrors::InvalidParameters(format!("I/O error: {e}")))?;
+
+        let mut writer = BufWriter::new(file);
+
+        // 2) Call the appropriate Arkworks serialization method
+        self.serialize_compressed(&mut writer)
+            .map_err(|e| PolyIOPErrors::InvalidParameters(format!("Serialize error: {e}")))?;
+
+        // 3) Flush the writer just to be safe
+        writer.flush().map_err(|e| {
+            PolyIOPErrors::InvalidParameters(format!("Flush error after writing polynomial: {e}"))
+        })?;
+
+        Ok(())
+    }
+
+    pub fn load(path: &PathBuf) -> Result<Self, PolyIOPErrors> {
+        let file = File::open(path)
+        .map_err(|e| PolyIOPErrors::InvalidParameters(format!("I/O error: {e}")))?;
+        let mut reader: BufReader<File> = BufReader::new(file);
+
+        let ondisk_state = {
+            {
+                OnDiskIOPProverState::<F>::deserialize_compressed(&mut reader)
+                    .map_err(|e| PolyIOPErrors::InvalidParameters(format!("Deserialize error: {e}")))?
+            }
+        };
+        
+        Ok(ondisk_state)
+    }
+}
+
+impl<F: PrimeField> From<OnDiskIOPProverState<F>> for IOPProverState<F> {
+    fn from(ondisk_state: OnDiskIOPProverState<F>) -> Self {
+        IOPProverState {
+            challenges: ondisk_state.challenges,
+            round: ondisk_state.round,
+            poly: ondisk_state.poly.into(),
+            extrapolation_aux: ondisk_state.extrapolation_aux,
+        }
+    }
+}
+
+impl<F: PrimeField> From<IOPProverState<F>> for OnDiskIOPProverState<F> {
+    fn from(ondisk_state: IOPProverState<F>) -> Self {
+        OnDiskIOPProverState {
+            challenges: ondisk_state.challenges,
+            round: ondisk_state.round,
+            poly: ondisk_state.poly.into(),
+            extrapolation_aux: ondisk_state.extrapolation_aux,
+        }
+    }
 }
 
 /// Prover State of a PolyIOP

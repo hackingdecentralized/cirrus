@@ -6,6 +6,7 @@ mod errors;
 mod network_channel;
 pub mod prelude;
 mod thread_channel;
+mod orchestrator;
 
 pub trait MasterProverChannel {
     /// TODO

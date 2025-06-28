@@ -3,6 +3,7 @@ members = [
   "arithmetic",
   "cirrus",
   "hyperplonk",
+  "mobile",
   "subroutines",
   "transcript",
   "util"

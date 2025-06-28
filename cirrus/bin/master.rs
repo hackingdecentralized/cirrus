@@ -7,7 +7,7 @@ use hyperplonk::{
     errors::HyperPlonkErrors,
     prelude::{MockCircuit, WitnessColumn},
     structs::{HyperPlonkProofDistributed, HyperPlonkProvingKeyMaster, HyperPlonkVerifyingKey},
-    HyperPlonkSNARKDistributed,
+    Cirrus,
 };
 use std::{fs::File, path::PathBuf};
 use subroutines::{MasterProverChannel, MasterProverChannelSocket, MultilinearKzgPCS, PolyIOP};

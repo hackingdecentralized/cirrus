@@ -36,5 +36,5 @@ pub use multilinear_polynomial::{
 pub use univariate_polynomial::{build_l, get_uni_domain};
 pub use util::{bit_decompose, gen_eval_point, get_batched_nv, get_index, transpose};
 pub use virtual_polynomial::{
-    build_eq_x_r, build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial,
+    build_eq_x_r, build_eq_x_r_vec, eq_eval, VPAuxInfo, VirtualPolynomial, OnDiskPolynomial
 };

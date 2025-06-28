@@ -1,7 +1,7 @@
 use arithmetic::transpose;
 use ark_ec::pairing::Pairing;
 use ark_std::test_rng;
-use hyperplonk::{prelude::*, HyperPlonkSNARKDistributed};
+use hyperplonk::{prelude::*, Cirrus};
 use std::{thread::spawn, time::Instant};
 use subroutines::{
     new_master_worker_channels, MultilinearKzgPCS, MultilinearUniversalParams, PolyIOP,
@@ -39,7 +39,7 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
     let (mut master_channel, worker_channels) =
         new_master_worker_channels(true, log_num_workers, "127.0.0.1:0");
 
-    let ((pk_master, pk_workers), vk) = <PolyIOP<Fr> as HyperPlonkSNARKDistributed<
+    let ((pk_master, pk_workers), vk) = <PolyIOP<Fr> as Cirrus<
         E,
         MultilinearKzgPCS<E>,
     >>::preprocess(&index, log_num_workers, &pcs_srs)?;
@@ -60,7 +60,7 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
         .zip(witnesses_distribution.into_iter())
         .map(|((pk, mut channel), witness)| {
             spawn(move || {
-                <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_worker(
+                <PolyIOP<Fr> as Cirrus<E, MultilinearKzgPCS<E>>>::prove_worker(
                     &pk,
                     &witness,
                     &mut channel,
@@ -71,7 +71,7 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
 
     let start = Instant::now();
 
-    let proof = <PolyIOP<Fr> as HyperPlonkSNARKDistributed<E, MultilinearKzgPCS<E>>>::prove_master(
+    let proof = <PolyIOP<Fr> as Cirrus<E, MultilinearKzgPCS<E>>>::prove_master(
         &pk_master,
         &circuit.public_inputs,
         log_num_workers,
@@ -85,7 +85,7 @@ fn helper(nv: usize, pcs_srs: &MultilinearUniversalParams<E>) -> Result<(), Hype
     let elapsed = start.elapsed();
     println!("Proving time: {:?}", elapsed);
 
-    assert!(<PolyIOP<Fr> as HyperPlonkSNARKDistributed<
+    assert!(<PolyIOP<Fr> as Cirrus<
         E,
         MultilinearKzgPCS<E>,
     >>::verify(&vk, &circuit.public_inputs, &proof,)?);

@@ -3,7 +3,7 @@ use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalDeserialize;
 use clap::Parser;
 use hyperplonk::{
-    errors::HyperPlonkErrors, prelude::WitnessColumn, structs::HyperPlonkProvingKeyWorker, HyperPlonkSNARKDistributed
+    errors::HyperPlonkErrors, prelude::WitnessColumn, structs::HyperPlonkProvingKeyWorker, Cirrus
 };
 use std::{fs::File, path::PathBuf};
 use subroutines::{MultilinearKzgPCS, PolyIOP, WorkerProverChannel, WorkerProverChannelSocket};

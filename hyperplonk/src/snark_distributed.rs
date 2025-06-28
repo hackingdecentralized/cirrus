@@ -26,10 +26,10 @@ use crate::{
         build_f_product, build_f_raw, eval_f, eval_perm_gate_distributed,
         PcsAccumulatorMaster, PcsAccumulatorWorker,
     },
-    HyperPlonkSNARKDistributed,
+    Cirrus,
 };
 
-impl<E, PCS> HyperPlonkSNARKDistributed<E, PCS> for PolyIOP<E::ScalarField>
+impl<E, PCS> Cirrus<E, PCS> for PolyIOP<E::ScalarField>
 where
     E: Pairing,
     PCS: PolynomialCommitmentSchemeDistributed<
@@ -831,7 +831,7 @@ mod tests {
             .zip(witnesses_distribution.into_iter())
             .map(|((pk, mut channel), witness)| {
                 spawn(move || {
-                    <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+                    <PolyIOP<E::ScalarField> as Cirrus<
                         E,
                         MultilinearKzgPCS<E>,
                     >>::prove_worker(&pk, &witness, &mut channel)
@@ -839,7 +839,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let proof = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+        let proof = <PolyIOP<E::ScalarField> as Cirrus<
             E,
             MultilinearKzgPCS<E>,
         >>::prove_master(
@@ -853,7 +853,7 @@ mod tests {
             handle.join().unwrap()?;
         }
 
-        assert!(<PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+        assert!(<PolyIOP<E::ScalarField> as Cirrus<
             E,
             MultilinearKzgPCS<E>,
         >>::verify(&vk, &w1.0[..num_pub_input], &proof)?);

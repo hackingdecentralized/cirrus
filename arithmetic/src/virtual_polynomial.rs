@@ -13,14 +13,19 @@ use crate::{
 };
 use ark_ff::PrimeField;
 use ark_poly::{DenseMultilinearExtension, MultilinearExtension};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Write};
 use ark_std::{
     end_timer,
     rand::{Rng, RngCore},
 };
+use std::{cmp::max, collections::HashMap, marker::PhantomData, ops::Add, sync::Arc};use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter};
+use std::path::PathBuf;
 #[cfg(feature = "parallel")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::{cmp::max, collections::HashMap, marker::PhantomData, ops::Add, sync::Arc};
+
+
+
 
 #[rustfmt::skip]
 /// A virtual polynomial is a sum of products of multilinear polynomials;
@@ -62,6 +67,15 @@ pub struct VirtualPolynomial<F: PrimeField> {
     raw_pointers_lookup_table: HashMap<*const DenseMultilinearExtension<F>, usize>,
 }
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct OnDiskPolynomial<F: PrimeField> {
+    pub aux_info: VPAuxInfo<F>,
+    /// Each product is a coefficient + set of indices to the relevant MLE factors.
+    pub products: Vec<(F, Vec<usize>)>,
+    /// The multilinear evaluations themselves, possibly large.
+    pub flattened_ml_extensions: Vec<Arc<DenseMultilinearExtension<F>>>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 /// Auxiliary information about the multilinear polynomial
 pub struct VPAuxInfo<F: PrimeField> {
@@ -91,6 +105,109 @@ impl<F: PrimeField> Add for &VirtualPolynomial<F> {
         }
         end_timer!(start);
         res
+    }
+}
+
+
+impl<F: PrimeField> From<VirtualPolynomial<F>> for OnDiskPolynomial<F> {
+    fn from(vp: VirtualPolynomial<F>) -> Self {
+        OnDiskPolynomial {
+            aux_info: vp.aux_info,
+            products: vp.products,
+            flattened_ml_extensions: vp.flattened_ml_extensions,
+        }
+    }
+}
+
+impl<F: PrimeField> From<OnDiskPolynomial<F>> for VirtualPolynomial<F> {
+    fn from(disk: OnDiskPolynomial<F>) -> Self {
+        VirtualPolynomial {
+            aux_info: disk.aux_info,
+            products: disk.products,
+            flattened_ml_extensions: disk.flattened_ml_extensions,
+            raw_pointers_lookup_table: HashMap::new(),
+        }
+    }
+}
+
+impl<F: PrimeField> OnDiskPolynomial<F> {
+    pub fn store(&self, path: &PathBuf) -> Result<(), ArithErrors> {
+        // 1) Open or create the file for writing
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .map_err(|e| ArithErrors::InvalidParameters(format!("I/O error: {e}")))?;
+
+        let mut writer = BufWriter::new(file);
+
+        self.serialize_compressed(&mut writer)
+            .map_err(|e| ArithErrors::InvalidParameters(format!("Serialize error: {e}")))?;
+
+        // 3) Flush the writer just to be safe
+        writer.flush().map_err(|e| {
+            ArithErrors::InvalidParameters(format!("Flush error after writing polynomial: {e}"))
+        })?;
+
+        Ok(())
+    }
+
+    pub fn load(path: &PathBuf) -> Result<Self, ArithErrors> {
+        let file = File::open(path)
+        .map_err(|e| ArithErrors::InvalidParameters(format!("I/O error: {e}")))?;
+        let mut reader: BufReader<File> = BufReader::new(file);
+
+        let ondisk_poly = {
+            {
+                OnDiskPolynomial::<F>::deserialize_compressed(&mut reader)
+                    .map_err(|e| ArithErrors::InvalidParameters(format!("Deserialize error: {e}")))?
+            }
+        };
+        
+        Ok(ondisk_poly)
+    }
+}
+
+impl<F: PrimeField> VirtualPolynomial<F> {
+    pub fn store(self, path: &PathBuf) -> Result<(), ArithErrors> {
+        // 1) Open or create the file for writing
+        let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|e| ArithErrors::InvalidParameters(format!("I/O error: {e}")))?;
+
+        let mut writer = BufWriter::new(file);
+
+        // 2) Call the appropriate Arkworks serialization method
+        let ondisk_poly = OnDiskPolynomial::from(self);
+
+        ondisk_poly.serialize_compressed(&mut writer)
+            .map_err(|e| ArithErrors::InvalidParameters(format!("Serialize error: {e}")))?;
+
+        // 3) Flush the writer just to be safe
+        writer.flush().map_err(|e| {
+            ArithErrors::InvalidParameters(format!("Flush error after writing polynomial: {e}"))
+        })?;
+
+        Ok(())
+    }
+
+    pub fn load(path: &PathBuf) -> Result<Self, ArithErrors> {
+        let file = File::open(path)
+        .map_err(|e| ArithErrors::InvalidParameters(format!("I/O error: {e}")))?;
+        let mut reader: BufReader<File> = BufReader::new(file);
+
+        let ondisk_poly = {
+            {
+                OnDiskPolynomial::<F>::deserialize_compressed(&mut reader)
+                    .map_err(|e| ArithErrors::InvalidParameters(format!("Deserialize error: {e}")))?
+            }
+        };
+        
+        Ok(VirtualPolynomial::from(ondisk_poly))
     }
 }
 
