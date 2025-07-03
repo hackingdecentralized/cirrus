@@ -39,6 +39,10 @@ path = "bin/setup.rs"
 name = "hyperplonk"
 path = "bin/hyperplonk.rs"
 
+[[bin]]
+name = "accountability"
+path = "bin/accountability.rs"
+
 # Benchmarks
 [[bench]]
 name = "cirrus-benches"

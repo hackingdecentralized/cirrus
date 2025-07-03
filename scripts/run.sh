@@ -31,6 +31,7 @@ usage() {
     echo "  run_master                           - Starts the master process."
     echo "  run_multi_worker                     - Starts multiple worker processes."
     echo "  run_single_worker                    - Starts a single worker process."
+    echo "  accountability                       - Simulates master prover for accountability time consumption."
     echo "  analyze                              - Analyzes a log file. Usage: analyze <master> or <worker>"
     exit 1
 }
@@ -215,6 +216,13 @@ analyze() {
     echo "Analysis complete. Results saved to $output_file"
 }
 
+# Function to simulate accountability time consumption
+accountability() {
+    echo "Simulating accountability time consumption..."
+    cargo run --release --bin accountability -- --log-num-constraints "$log_num_vars" --log-num-workers "$log_num_workers" --curve "$curve" 
+    echo "Accountability simulation complete."
+}
+
 # Main script entry point to execute the chosen action
 case "$action" in
     setup)
@@ -231,6 +239,9 @@ case "$action" in
         ;;
     analyze)
         analyze
+        ;;
+    accountability)
+        accountability
         ;;
     *)
         usage

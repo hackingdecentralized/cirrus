@@ -23,7 +23,7 @@ mod selectors;
 mod snark;
 pub mod snark_distributed;
 pub mod structs;
-mod utils;
+pub mod utils;
 mod witness;
 
 /// A trait for HyperPlonk SNARKs.

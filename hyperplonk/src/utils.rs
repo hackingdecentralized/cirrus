@@ -279,7 +279,7 @@ pub(crate) fn prover_sanity_check<F: PrimeField>(
 /// build `f(w_0(x),...w_d(x))` where `f` is the constraint polynomial
 /// i.e., `f(a, b, c) = q_l a(x) + q_r b(x) + q_m a(x)b(x) - q_o c(x)` in
 /// vanilla plonk
-pub(crate) fn build_f<F: PrimeField>(
+pub fn build_f<F: PrimeField>(
     gates: &CustomizedGates,
     num_vars: usize,
     selector_mles: &[Arc<DenseMultilinearExtension<F>>],
