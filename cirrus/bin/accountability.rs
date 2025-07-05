@@ -143,6 +143,7 @@ fn run_with_curve<E: Pairing>(
         handle.join().unwrap()?;
     }
 
+    // step 1: proof verification time
     #[cfg(feature = "print-time")]
     let start_verify = Instant::now();
 
@@ -160,8 +161,7 @@ fn run_with_curve<E: Pairing>(
         start_verify.elapsed()
     );
 
-    #[cfg(feature = "print-time")]
-    let start_circuit = Instant::now();
+    // step 2: circuit multilinear extension evaluation
     let circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << nv, &gate);
     let selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
         circuit.index.selectors
@@ -172,6 +172,9 @@ fn run_with_curve<E: Pairing>(
         .iter()
         .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
         .collect();
+
+    #[cfg(feature = "print-time")]
+    let start_circuit = Instant::now();
     let poly = build_f(
         &circuit.index.params.gate_func,
         nv,
@@ -179,6 +182,8 @@ fn run_with_curve<E: Pairing>(
         &witness_polys
     )?;
 
+    // we use (1, 1, \dots, 1) to mock the evaluation, because the time consumption
+    // isn't related to point choice.
     poly.evaluate(&vec![E::ScalarField::from(1u64); nv])?;
 
     #[cfg(feature = "print-time")]
