@@ -219,7 +219,7 @@ analyze() {
 # Function to simulate accountability time consumption
 accountability() {
     echo "Simulating accountability time consumption..."
-    cargo run --release --bin accountability -- --log-num-constraints "$log_num_vars" --log-num-workers "$log_num_workers" --curve "$curve" 
+    cargo run --release --bin accountability -- --log-num-constraints "$log_num_vars" --log-num-workers "$log_num_workers" --curve "$curve" --num-threads "$num_threads"
     echo "Accountability simulation complete."
 }
 

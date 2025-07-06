@@ -17,6 +17,8 @@ use ark_bls12_377::Bls12_377;
 
 #[derive(Parser)]
 struct Args {
+    #[clap(long, value_name = "number of threads", default_value = "8")]
+    num_threads: usize,
     #[clap(
         long,
         value_name = "log number of workers (greater than 0)",
@@ -43,6 +45,7 @@ static MAX_NUM_VARS: usize = 30;
 
 fn main() -> Result<(), HyperPlonkErrors> {
     let Args {
+        num_threads,
         log_num_workers,
         gate,
         log_num_constraints: nv,
@@ -66,6 +69,18 @@ fn main() -> Result<(), HyperPlonkErrors> {
             "gate should be either \"vanilla\" or \"jellyfish\"".to_string(),
         ));
     }
+
+    #[cfg(feature = "parallel")]
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .unwrap();
+
+    #[cfg(feature = "parallel")]
+    println!("[INFO] rayon threads: {:?}", rayon::current_num_threads());
+
+    #[cfg(not(feature = "parallel"))]
+    println!("[WARN] parallel feature is not enabled, using single thread");
 
     match curve.as_str() {
         "bn254" => run_with_curve::<Bn254>(log_num_workers, gate, nv),
