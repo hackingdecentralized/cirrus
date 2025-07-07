@@ -15,7 +15,8 @@ use ark_bn254::Bn254;
 use ark_bls12_381::Bls12_381;
 use ark_bls12_377::Bls12_377;
 #[cfg(feature = "parallel")]
-use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
+// use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Parser)]
 struct Args {
@@ -124,7 +125,7 @@ fn run_with_curve<E: Pairing>(
     let (mut master_channel, worker_channels) =
         new_master_worker_thread_channels(mock_log_num_workers);
     let witnesses_distribution = circuit.witnesses
-        .iter()
+        .par_iter()
         .map(|w| {
             w.0.chunks(1 << (pk_master.params.num_variables()) - mock_log_num_workers)
                 .map(|chunk| WitnessColumn(chunk.to_vec()))
@@ -133,9 +134,9 @@ fn run_with_curve<E: Pairing>(
         .collect::<Vec<_>>();
     let witnesses_distribution = transpose(witnesses_distribution);
     let worker_handles = pk_workers
-        .into_iter()
-        .zip(worker_channels.into_iter())
-        .zip(witnesses_distribution.into_iter())
+        .into_par_iter()
+        .zip(worker_channels.into_par_iter())
+        .zip(witnesses_distribution.into_par_iter())
         .map(|((pk, mut channel), witness)| {
             spawn(move || {
                 <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
@@ -164,7 +165,18 @@ fn run_with_curve<E: Pairing>(
     #[cfg(feature = "print-time")]
     let start_verify = Instant::now();
 
-    for _ in 0..(1<<log_num_workers) {
+    #[cfg(feature = "parallel")]
+    (0..(1 << log_num_workers)).into_par_iter().try_for_each(|_| {
+        let verify_result = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
+            E,
+            MultilinearKzgPCS<E>,
+        >>::verify(&vk, &circuit.public_inputs, &proof)?;
+        assert!(verify_result);
+        Ok::<(), HyperPlonkErrors>(())
+    })?;
+
+    #[cfg(not(feature = "parallel"))]
+    for _ in 0..(1 << log_num_workers) {
         let verify_result = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
             E,
             MultilinearKzgPCS<E>,
@@ -185,11 +197,11 @@ fn run_with_curve<E: Pairing>(
     let start_circuit = Instant::now();
     let selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
         circuit.index.selectors
-            .iter()
+            .par_iter()
             .map(|s| Arc::new(DenseMultilinearExtension::from(s)))
             .collect();
     let witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> = circuit.witnesses
-        .iter()
+        .par_iter()
         .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
         .collect();
     let poly = build_f(
