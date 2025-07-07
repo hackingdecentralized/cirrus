@@ -192,28 +192,48 @@ fn run_with_curve<E: Pairing>(
 
     // step 2: circuit multilinear extension evaluation
     let circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << nv, &gate);
+    let sub_circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << (nv - log_num_workers), &gate);
+
+    let sub_selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+        sub_circuit.index.selectors
+            .par_iter()
+            .map(|s| Arc::new(DenseMultilinearExtension::from(s)))
+            .collect();
+    let sub_witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+        sub_circuit.witnesses
+            .par_iter()
+            .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
+            .collect();
 
     #[cfg(feature = "print-time")]
     let start_circuit = Instant::now();
-    let selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+    let _selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
         circuit.index.selectors
             .par_iter()
             .map(|s| Arc::new(DenseMultilinearExtension::from(s)))
             .collect();
-    let witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> = circuit.witnesses
-        .par_iter()
-        .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
-        .collect();
-    let poly = build_f(
-        &circuit.index.params.gate_func,
-        nv,
-        &selector_polys,
-        &witness_polys
-    )?;
+    let _witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+        circuit.witnesses
+            .par_iter()
+            .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
+            .collect();
 
-    // we use (1, 1, \dots, 1) to mock the evaluation, because the time consumption
+    // we use (x, x, \dots, x) to mock the evaluation, because the time consumption
     // isn't related to point choice.
-    poly.evaluate(&vec![E::ScalarField::from(1u64); nv])?;
+    (0..(1<<log_num_workers))
+        .into_par_iter()
+        .try_for_each(|p| {
+            let sub_poly = build_f(
+                &sub_circuit.index.params.gate_func,
+                nv - log_num_workers,
+                &sub_selector_polys,
+                &sub_witness_polys
+            )?;
+            sub_poly.evaluate(&vec![E::ScalarField::from(p as u64); nv - log_num_workers])?;
+            Ok::<(), HyperPlonkErrors>(())
+        })?;
+
+    // poly.evaluate(&vec![E::ScalarField::from(1u64); nv - log_num_workers])?;
 
     #[cfg(feature = "print-time")]
     println!("[INFO] permutation check time: {:?}", start_circuit.elapsed());
