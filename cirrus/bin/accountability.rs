@@ -110,7 +110,13 @@ fn run_with_curve<E: Pairing>(
 
     let mock_nv = nv - log_num_workers;
     let mock_log_num_workers = 1;
+    // step 0: circuit construction time
+    #[cfg(feature = "print-time")]
+    let start_circuit = Instant::now();
     let circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << mock_nv, &gate);
+
+    #[cfg(feature = "print-time")]
+    println!("[INFO] circuit construction time: {:?}", start_circuit.elapsed());
 
     let mut rng = ark_std::test_rng();
     let pcs_srs = MultilinearKzgPCS::<E>::gen_srs_for_testing(&mut rng, mock_nv)?;
@@ -184,10 +190,12 @@ fn run_with_curve<E: Pairing>(
         assert!(verify_result);
     }
 
+    let t1 = start_verify.elapsed();
+
     #[cfg(feature = "print-time")]
     println!(
         "[INFO] commitment opening verification time: {:?}",
-        start_verify.elapsed()
+        t1
     );
 
     // step 2: circuit multilinear extension evaluation
@@ -207,16 +215,16 @@ fn run_with_curve<E: Pairing>(
 
     #[cfg(feature = "print-time")]
     let start_circuit = Instant::now();
-    let _selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
-        circuit.index.selectors
-            .par_iter()
-            .map(|s| Arc::new(DenseMultilinearExtension::from(s)))
-            .collect();
-    let _witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
-        circuit.witnesses
-            .par_iter()
-            .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
-            .collect();
+    // let _selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+    //     circuit.index.selectors
+    //         .par_iter()
+    //         .map(|s| Arc::new(DenseMultilinearExtension::from(s)))
+    //         .collect();
+    // let _witness_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
+    //     circuit.witnesses
+    //         .par_iter()
+    //         .map(|w| Arc::new(DenseMultilinearExtension::from(w)))
+    //         .collect();
 
     // we use (x, x, \dots, x) to mock the evaluation, because the time consumption
     // isn't related to point choice.
@@ -235,8 +243,16 @@ fn run_with_curve<E: Pairing>(
 
     // poly.evaluate(&vec![E::ScalarField::from(1u64); nv - log_num_workers])?;
 
+    let t2 = start_circuit.elapsed();
+
     #[cfg(feature = "print-time")]
-    println!("[INFO] permutation check time: {:?}", start_circuit.elapsed());
+    println!("[INFO] permutation check time: {:?}", t2);
+
+    #[cfg(feature = "print-time")]
+    println!(
+        "[INFO] total time: {:?}",
+        t1 + t2
+    );
 
     Ok(())
 }
