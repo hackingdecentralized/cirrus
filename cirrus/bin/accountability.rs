@@ -108,7 +108,7 @@ fn run_with_curve<E: Pairing>(
         _ => unreachable!(),
     };
 
-    let mock_nv = nv - log_num_workers;
+    let mock_nv = nv - log_num_workers - 1;
     let mock_log_num_workers = 1;
     // step 0: circuit construction time
     #[cfg(feature = "print-time")]
@@ -199,8 +199,7 @@ fn run_with_curve<E: Pairing>(
     );
 
     // step 2: circuit multilinear extension evaluation
-    let circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << nv, &gate);
-    let sub_circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << (nv - log_num_workers), &gate);
+    let sub_circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << mock_nv, &gate);
 
     let sub_selector_polys: Vec<Arc<DenseMultilinearExtension<E::ScalarField>>> =
         sub_circuit.index.selectors
@@ -233,11 +232,11 @@ fn run_with_curve<E: Pairing>(
         .try_for_each(|p| {
             let sub_poly = build_f(
                 &sub_circuit.index.params.gate_func,
-                nv - log_num_workers,
+                mock_nv,
                 &sub_selector_polys,
                 &sub_witness_polys
             )?;
-            sub_poly.evaluate(&vec![E::ScalarField::from(p as u64); nv - log_num_workers])?;
+            sub_poly.evaluate(&vec![E::ScalarField::from(p as u64); mock_nv])?;
             Ok::<(), HyperPlonkErrors>(())
         })?;
 

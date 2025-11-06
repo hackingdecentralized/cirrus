@@ -13,13 +13,11 @@ master_dir = os.path.abspath(master_dir)
 key_path = os.path.join(master_dir, "./key/cirrus.pem")
 key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
-# Local path to the `cirrus.zip` file
-local_zip_path = os.path.join(master_dir, "cirrus.zip")
-remote_zip_path = "/home/ubuntu/cirrus.zip"
-
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-
+    "3.133.95.167",
+    "18.217.134.40",
+    "18.216.185.101"
 ]
 
 # Path to the bash file with commands
@@ -28,44 +26,6 @@ setup_cmd = os.path.join(script_dir, "update_setup.sh")
 # List of files to be uploaded to specific instances
 circuit_files = ["circuit.plonk", "master.pk", "verify.key"]
 worker_files_pattern = "worker_{worker_id}.pk"
-
-def load_commands_from_file(file_path):
-    """Load commands from a bash file."""
-    with open(file_path, 'r') as file:
-        # Read lines, stripping comments and empty lines
-        commands = [line.strip() for line in file if line.strip() and not line.startswith("#")]
-    return commands
-
-# Load commands from the bash file
-commands = load_commands_from_file(setup_cmd)
-
-def transfer_repo_code(ip, main_key_path, local_zip_path):
-    """Transfers a zip file containing the repo code to an EC2 instance."""
-    try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        print(f"Connecting to {ip} to transfer repo code...")
-        ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
-
-        sftp = ssh.open_sftp()
-        print(f"Transferring {local_zip_path} to {ip}:{remote_zip_path}...")
-        sftp.put(local_zip_path, remote_zip_path)
-        sftp.close()
-        # Execute setup commands
-        for command in commands:
-            print(f"Executing: {command}")
-            stdin, stdout, stderr = ssh.exec_command(command)
-            exit_status = stdout.channel.recv_exit_status()  # Wait for command to complete
-            if exit_status == 0:
-                print(f"Success: {command}")
-            else:
-                print(f"Error: {command}\n{stderr.read().decode()}")
-            time.sleep(1)
-    
-        ssh.close()
-        print(f"Repo code transfer complete on {ip}")
-    except (SSHException, IOError) as e:
-        print(f"Failed to transfer repo code on {ip}: {e}")
 
 def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_num_workers, instance_type, worker_id_start=0, num_threads=8):
     """Transfers circuit files to the master or worker instances."""
@@ -101,10 +61,10 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
         print(f"Failed to transfer circuit files on {ip}: {e}")
 
 # Transfer circuit files
-num_workers = [4, 5, 6, 7, 8]
-log_num_vars = [19, 20, 21, 22, 23, 24]
+log_num_workers = [1, 2, 3, 4]
+log_num_vars = [16, 17, 18, 19, 20]
 
-for log_num_worker in num_workers:
+for log_num_worker in log_num_workers:
     for log_num_var in log_num_vars:
         num_total_instances = 1 + ((1 << log_num_worker) + 7) // 8  # Total number of instances including the master
         threads = []
@@ -125,8 +85,6 @@ for log_num_worker in num_workers:
             thread.join()
 
 # Wait for all circuit file transfers to complete
-
-
 print("Circuit file transfer complete for all instances.")
 
 print("Setup process complete for all instances.")

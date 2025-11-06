@@ -4,6 +4,7 @@ mv ~/cirrus.zip ~/projects/
 cd ~/projects
 sudo apt install unzip -y
 unzip ~/projects/cirrus.zip -d ~/projects && rm ~/projects/cirrus.zip
+chmod +x ~/projects/cirrus/scripts/run.sh
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 sudo apt update -y

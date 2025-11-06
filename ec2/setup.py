@@ -6,24 +6,26 @@ import os
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
+master_dir = os.path.join(script_dir, "../")
+master_dir = os.path.abspath(master_dir)
 
 # Define the relative path to the key and resolve it to an absolute path
-key_path = os.path.join(script_dir, "../key/cirrus.pem")
+key_path = os.path.join(master_dir, "./key/cirrus.pem")
 key_path = os.path.abspath(key_path)  # Resolve to an absolute path
+
+# Path to the bash file with commands
+setup_cmd = os.path.join(script_dir, "setup.sh")
+
+# Local path to the `cirrus.zip` file
+local_zip_path = os.path.join(master_dir, "cirrus.zip")
+remote_zip_path = "/home/ubuntu/cirrus.zip"
 
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-    "54.166.156.21",
-    "3.94.193.121",
-    "54.198.178.147"
+        # "3.133.95.167",
+    "18.217.134.40",
+    "18.216.185.101"
 ]
-
-# Path to the bash file with commands
-setup_cmd = os.path.join(script_dir, "setup_hekaton.sh")
-
-# Local path to the `cirrus.zip` file
-local_zip_path = "../hekaton.zip"
-remote_zip_path = "/home/ubuntu/hekaton.zip"
 
 def load_commands_from_file(file_path):
     """Load commands from a bash file."""
