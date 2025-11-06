@@ -23,6 +23,8 @@ use ark_poly::DenseMultilinearExtension;
 use ark_std::end_timer;
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
+use ark_std::hint::black_box;
+use rand::{RngCore, rngs::OsRng};
 
 mod util;
 
@@ -398,10 +400,21 @@ where
 
         let preparation =
             start_timer_with_timestamp!("Distributed prod check preparation; master");
+
+        #[cfg(not(feature = "bench-master"))]
         let sub_prod: Vec<E::ScalarField> = master_channel.recv()?;
-        let prod_master = compute_product_poly(&Arc::new(
+
+        #[cfg(feature = "bench-master")]
+        OsRng.fill_bytes(&mut [0u8; 16]);
+        
+        #[cfg(feature = "bench-master")]
+        let sub_prod: Vec<E::ScalarField> = (0..(1 << log_num_workers))
+            .map(|_| E::ScalarField::from(1000100101u128))
+            .collect();
+
+        let prod_master = black_box(compute_product_poly(&Arc::new(
             DenseMultilinearExtension::from_evaluations_vec(log_num_workers, sub_prod.clone()),
-        ))?;
+        ))?);
 
         let frac_comm =
             PCS::commit_distributed_master(pcs_param_master, &num_vars, master_channel)?;

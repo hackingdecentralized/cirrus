@@ -20,6 +20,8 @@ use ark_poly::DenseMultilinearExtension;
 use ark_std::{end_timer, start_timer};
 use std::{fmt::Debug, sync::Arc};
 use transcript::IOPTranscript;
+use ark_std::hint::black_box;
+use rand::{RngCore, rngs::OsRng};
 
 mod prover;
 mod verifier;
@@ -308,8 +310,26 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
 
         for _ in 0..phase1 {
             master_channel.send_uniform(&challenge)?;
+            
+            #[cfg(not(feature = "bench-master"))]
             let worker_prover_msgs: Vec<IOPProverMessage<F>> = master_channel.recv()?;
-            let evaluations =
+            #[cfg(feature = "bench-master")]
+            OsRng.fill_bytes(&mut [0u8; 16]);
+            
+            // println!("{}", 1 << (log_num_workers));
+
+            #[cfg(feature = "bench-master")]
+            let worker_prover_msgs: Vec<IOPProverMessage<F>> = (0..(1 << log_num_workers))
+                .map(|_| {
+                    IOPProverMessage {
+                        evaluations: (0..eval_len)
+                            .map(|_| F::from((1000100101u128)))
+                            .collect(),
+                    }
+                })
+                .collect();
+
+            let evaluations = black_box(
                 worker_prover_msgs
                     .iter()
                     .fold(vec![F::zero(); eval_len], |ev1, ev2| {
@@ -317,7 +337,8 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
                             .zip(ev2.evaluations.iter())
                             .map(|(e1, e2)| e1 + e2)
                             .collect::<Vec<_>>()
-                    });
+                    })
+            );
 
             let prover_msg = IOPProverMessage { evaluations };
             transcript.append_serializable_element(b"prover msg", &prover_msg)?;
@@ -333,16 +354,37 @@ impl<F: PrimeField> SumCheckDistributed<F> for PolyIOP<F> {
         let construct_poly_timer = start_timer_with_timestamp!("construct poly; master");
         master_channel.send_uniform(&challenge)?;
         let flattened_ml_extensions = {
+            #[cfg(not(feature = "bench-master"))]
             let evals = master_channel.recv::<Vec<F>>()?;
+
+            #[cfg(feature = "bench-master")]
+            let num_mle = poly_products
+                .iter()
+                .map(|(_, indices)| indices.iter().max().unwrap_or(&0))
+                .max()
+                .unwrap_or(&0)
+                .clone() + 1;
+            #[cfg(feature = "bench-master")]
+            OsRng.fill_bytes(&mut [0u8; 16]);
+
+            #[cfg(feature = "bench-master")]
+            let evals: Vec<Vec<F>> = (0..(1 << log_num_workers))
+                .map(|_| {
+                    (0..num_mle)
+                        .map(|_| F::from(1000100101u128))
+                        .collect()
+                })
+                .collect();
+
             let len = evals
                 .get(0)
                 .map(|x| x.len())
                 .ok_or(PolyIOPErrors::InvalidDistributedMessage)?;
-            let mut x = evals.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>();
-            (0..len)
+            let mut x = black_box(evals.into_iter().map(|x| x.into_iter()).collect::<Vec<_>>());
+            black_box((0..len)
                 .map(|_| x.iter_mut().map(|y| y.next().unwrap()).collect::<Vec<_>>())
                 .map(|x| Arc::new(DenseMultilinearExtension::from_evaluations_vec(phase2, x)))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         };
 
         let poly = VirtualPolynomial::new_from_raw(
