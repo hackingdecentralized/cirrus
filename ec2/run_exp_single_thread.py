@@ -13,47 +13,18 @@ key_path = os.path.join(script_dir, "../key/cirrus.pem")
 key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
 # Define the public IP addresses of master and worker EC2 instances
-master_ip = "54.166.156.21"
-master_private_addr = "172.31.119.134"
+master_ip = "3.133.95.167"
+# The private IPV4 address
+master_private_addr = "172.31.19.161"
 master_listen_port = 7034
 worker_ips = [
-    "54.82.65.157",
-    "18.209.22.83",
-    "54.167.25.218",
-    "3.94.198.250",
-    "34.203.200.225",
-    "34.229.125.185",
-    "54.163.222.169",
-    "54.167.4.21",
-    "34.228.115.220",
-    "18.209.9.201",
-    "50.19.29.91",
-    "54.90.144.167",
-    "54.163.47.82",
-    "18.212.77.123",
-    "54.167.25.142",
-    "54.167.61.96",
-    "18.208.190.100",
-    "34.229.177.155",
-    "18.208.190.120",
-    "54.210.58.114",
-    "3.88.47.236",
-    "50.17.118.255",
-    "54.210.180.15",
-    "107.23.116.39",
-    "54.152.208.71",
-    "34.229.200.183",
-    "3.90.110.98",
-    "54.82.41.158",
-    "52.207.80.134",
-    "54.197.158.85",
-    "54.235.29.78",
-    "34.228.15.29"
+    "18.217.134.40",
+    "18.216.185.101"
 ]
 
 # Define the configurations for log_num_workers and log_num_vars
-log_num_workers_configs = [8]  # Example configurations for log_num_workers
-log_num_vars_configs = [19, 20, 21]  # Example configurations for log_num_vars
+log_num_workers_configs = [4]  # Example configurations for log_num_workers
+log_num_vars_configs = [16]  # Example configurations for log_num_vars
 curve = "bls12_381"
 
 # Function to create SSH client

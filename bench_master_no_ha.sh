@@ -2,7 +2,7 @@
 
 # Define ranges for num-vars and log-num-workers
 num_vars_values=(1 2 4 8 16 32)
-output_log="benchmark_times_1.log"
+output_log="benchmark_times_no_ha.log"
 
 # Clear the log file if it exists
 > "$output_log"
@@ -15,7 +15,7 @@ for num_vars in "${num_vars_values[@]}"; do
   # Loop through each value of log-num-workers from 1 to min(num_vars, 20)
   for ((log_num_workers = 1; log_num_workers <= max_log_num_workers; log_num_workers++)); do
     # Run the cargo command with the current values and capture the output
-    echo "Running benchmark with --num-vars=$((num_vars + log_num_workers)) and --log-num-workers=$log_num_workers"
+    echo "Running benchmark with --num-vars=$((num_vars)) and --log-num-workers=$log_num_workers"
     output=$(cargo run --release --package cirrus --bin bench_master --features bench-master -- \
       --num-vars "$((num_vars + log_num_workers))" --log-num-workers "$log_num_workers" --num-threads 1 2>&1)
 

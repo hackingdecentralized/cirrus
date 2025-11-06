@@ -20,13 +20,14 @@ ec2_public_ips = [
     "18.216.185.101"
 ]
 
-# Path to the bash file with commands
-setup_cmd = os.path.join(script_dir, "update_setup.sh")
+log_num_workers = [4]
+log_num_vars = [16]
 
 # List of files to be uploaded to specific instances
 circuit_files = ["circuit.plonk", "master.pk", "verify.key"]
 worker_files_pattern = "worker_{worker_id}.pk"
 
+# Transfer circuit files
 def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_num_workers, instance_type, worker_id_start=0, num_threads=8):
     """Transfers circuit files to the master or worker instances."""
     try:
@@ -35,13 +36,13 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
         ssh.connect(ip, username="ubuntu", key_filename=main_key_path)
         sftp = ssh.open_sftp()
         
-        folder_path = f"out/vanilla-bn254-{log_num_vars}-{log_num_workers}"
+        folder_path = f"out/vanilla-{log_num_vars}-{log_num_workers}"
         remote_out_path = f"/home/ubuntu/projects/cirrus/{folder_path}"
         ssh.exec_command(f"mkdir -p {remote_out_path}")
 
         if instance_type == "master":
             for file in circuit_files:
-                local_path = os.path.join(script_dir, "../", folder_path, file)
+                local_path = os.path.join(master_dir, folder_path, file)
                 remote_path = os.path.join(remote_out_path, file)
                 print(f"Transferring {file} to {ip}:{remote_path}...")
                 sftp.put(local_path, remote_path)
@@ -49,7 +50,7 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
             for j in range(num_threads):  # Iterate to transfer files for each thread
                 worker_id = j + worker_id_start
                 worker_file = worker_files_pattern.format(worker_id=worker_id)
-                local_path = os.path.join(script_dir, "../", folder_path, worker_file)
+                local_path = os.path.join(master_dir, folder_path, worker_file)
                 remote_path = os.path.join(remote_out_path, worker_file)
                 print(f"Transferring {worker_file} to {ip}:{remote_path}...")
                 sftp.put(local_path, remote_path)
@@ -59,10 +60,6 @@ def transfer_circuit_files_single_thread(ip, main_key_path, log_num_vars, log_nu
         print(f"Circuit files transfer complete on {ip}")
     except (SSHException, IOError) as e:
         print(f"Failed to transfer circuit files on {ip}: {e}")
-
-# Transfer circuit files
-log_num_workers = [1, 2, 3, 4]
-log_num_vars = [16, 17, 18, 19, 20]
 
 for log_num_worker in log_num_workers:
     for log_num_var in log_num_vars:
