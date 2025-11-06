@@ -16,7 +16,7 @@ key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 master_ip = "3.133.95.167"
 # The private IPV4 address
 master_private_addr = "172.31.19.161"
-master_listen_port = 7034
+master_listen_port = 7056
 worker_ips = [
     "18.217.134.40",
     "18.216.185.101"

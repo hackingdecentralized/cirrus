@@ -16,7 +16,6 @@ use ark_bls12_381::Bls12_381;
 use ark_bls12_377::Bls12_377;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-// use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Parser)]
 struct Args {
@@ -79,6 +78,9 @@ fn main() -> Result<(), HyperPlonkErrors> {
         .build_global()
         .unwrap();
 
+    let log_threads = (num_threads as f64).log2(); // compute log₂
+    let log_threads_usize = log_threads as usize; // convert to usize
+
     #[cfg(feature = "parallel")]
     println!("[INFO] rayon threads: {:?}", rayon::current_num_threads());
 
@@ -86,9 +88,9 @@ fn main() -> Result<(), HyperPlonkErrors> {
     println!("[WARN] parallel feature is not enabled, using single thread");
 
     match curve.as_str() {
-        "bn254" => run_with_curve::<Bn254>(log_num_workers, gate, nv),
-        "bls12_381" => run_with_curve::<Bls12_381>(log_num_workers, gate, nv),
-        "bls12_377" => run_with_curve::<Bls12_377>(log_num_workers, gate, nv),
+        "bn254" => run_with_curve::<Bn254>(log_num_workers - log_threads_usize, gate, nv - log_threads_usize),
+        "bls12_381" => run_with_curve::<Bls12_381>(log_num_workers - log_threads_usize, gate, nv - log_threads_usize),
+        "bls12_377" => run_with_curve::<Bls12_377>(log_num_workers - log_threads_usize, gate, nv - log_threads_usize),
         _ => {
             return Err(HyperPlonkErrors::InvalidParameters(
                 "curve should be one of [\"bn254\", \"bls12_381\", \"bls12_377\", \"mnt4_753\", \"mnt6_753\"]".to_string(),
@@ -108,7 +110,7 @@ fn run_with_curve<E: Pairing>(
         _ => unreachable!(),
     };
 
-    let mock_nv = nv - log_num_workers - 1;
+    let mock_nv = nv - log_num_workers;
     let mock_log_num_workers = 1;
     // step 0: circuit construction time
     #[cfg(feature = "print-time")]
