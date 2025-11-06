@@ -306,3 +306,4 @@ key/
 accountability_out/
 *.zip
 .env
+*.png
