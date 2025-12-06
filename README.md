@@ -234,6 +234,6 @@ Time elapsed for --log-num-vars=$log_num_vars and --log-num-workers=$log_num_wor
 
 ## Disclaimer
 
-This software is provided “as is.” It has not undergone a third-party security audit.
+This software is provided "as is." It has not undergone a third-party security audit.
 Opening “All traffic / Anywhere” security groups is only for the convenience of AE and not recommended outside controlled environments. Use at your own risk.
 

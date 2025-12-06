@@ -57,7 +57,6 @@ impl<F: PrimeField> MockCircuit<F> {
         let mut selectors: Vec<SelectorColumn<F>> = vec![SelectorColumn::default(); num_selectors];
         let mut witnesses: Vec<WitnessColumn<F>> = vec![WitnessColumn::default(); num_witnesses];
 
-        let start_circuit = Instant::now();
         for _cs_counter in 0..num_constraints {
             let mut cur_selectors: Vec<F> = (0..(num_selectors - 1))
                 .map(|_| F::rand(&mut rng))
@@ -99,7 +98,7 @@ impl<F: PrimeField> MockCircuit<F> {
                 witnesses[i].append(cur_witness[i]);
             }
         }
-        print!("[INFO] mock circuit generation time: {:?}\n", start_circuit.elapsed());
+
         let pub_input_len = ark_std::cmp::min(4, num_constraints);
         let public_inputs = witnesses[0].0[0..pub_input_len].to_vec();
 

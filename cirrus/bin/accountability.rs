@@ -112,13 +112,8 @@ fn run_with_curve<E: Pairing>(
 
     let mock_nv = nv - log_num_workers;
     let mock_log_num_workers = 1;
-    // step 0: circuit construction time
-    #[cfg(feature = "print-time")]
-    let start_circuit = Instant::now();
+    // step 0: circuit construction
     let circuit = MockCircuit::<<E as Pairing>::ScalarField>::new(1 << mock_nv, &gate);
-
-    #[cfg(feature = "print-time")]
-    println!("[INFO] circuit construction time: {:?}", start_circuit.elapsed());
 
     let mut rng = ark_std::test_rng();
     let pcs_srs = MultilinearKzgPCS::<E>::gen_srs_for_testing(&mut rng, mock_nv)?;
@@ -174,7 +169,7 @@ fn run_with_curve<E: Pairing>(
     let start_verify = Instant::now();
 
     #[cfg(feature = "parallel")]
-    (0..(1 << log_num_workers)).into_par_iter().try_for_each(|_| {
+    (0..(1 << log_num_workers)).into_iter().try_for_each(|_| {
         let verify_result = <PolyIOP<E::ScalarField> as HyperPlonkSNARKDistributed<
             E,
             MultilinearKzgPCS<E>,
@@ -230,7 +225,7 @@ fn run_with_curve<E: Pairing>(
     // we use (x, x, \dots, x) to mock the evaluation, because the time consumption
     // isn't related to point choice.
     (0..(1<<log_num_workers))
-        .into_par_iter()
+        .into_iter()
         .try_for_each(|p| {
             let sub_poly = build_f(
                 &sub_circuit.index.params.gate_func,

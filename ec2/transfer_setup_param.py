@@ -15,13 +15,12 @@ key_path = os.path.abspath(key_path)  # Resolve to an absolute path
 
 # Define the public IP addresses of your EC2 instances
 ec2_public_ips = [
-    "3.133.95.167",
-    "18.217.134.40",
-    "18.216.185.101"
+    "a.a.a.a", # Coordinator, with private IP b.b.b.b
+    # Worker instance IPs
 ]
 
-log_num_workers = [4]
-log_num_vars = [16]
+log_num_workers = [8]
+log_num_vars = [25]
 
 # List of files to be uploaded to specific instances
 circuit_files = ["circuit.plonk", "master.pk", "verify.key"]
