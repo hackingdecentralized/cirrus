@@ -235,6 +235,11 @@ Each command prints lines like:
 Time elapsed for --log-num-vars=$log_num_vars and --log-num-workers=$log_num_workers: {t}ms
 ```
 
+## Acknowledgement
+
+This project is supported in part by the Ethereum Foundation. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not
+necessarily reflect the views of these institutes.
+
 ## Disclaimer
 
 This software is provided "as is." It has not undergone a third-party security audit.
