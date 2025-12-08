@@ -1,5 +1,8 @@
 # Cirrus: Performant and Accountable Distributed SNARK
 
+> [!WARNING]
+This is an academic research prototype meant to elucidate protocol details for proofs-of-concept and benchmarking. It has not been developed for production usage, nor has it been audited (i.e., it may contain security vulnerabilities). 
+
 ## Overview
 Cirrus is an accountable, distributed PLONK‑style prover built on top of HyperPlonk. Cirrus distributes proving across multiple workers, provides a fast accountability protocol to identify misbehaving workers, and uses a **universal** setup (SRS) compatible with HyperPlonk.
 
