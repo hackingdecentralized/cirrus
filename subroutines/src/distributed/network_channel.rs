@@ -48,6 +48,7 @@ impl MasterProverChannelSocket {
             let (mut socket, addr) = listener
                 .accept()
                 .map_err(|_| DistributedError::MasterListenError)?;
+            socket.set_nodelay(true).expect("Failed to set TCP_NODELAY");
 
             let mut worker_id_buf = [0u8; 8];
             socket
@@ -251,6 +252,7 @@ impl WorkerProverChannelSocket {
     pub fn bind(master_addr: &str, worker_id: usize) -> Result<Self, DistributedError> {
         let mut socket =
             TcpStream::connect(master_addr).map_err(|_| DistributedError::WorkerConnectError)?;
+        socket.set_nodelay(true).expect("Failed to set TCP_NODELAY");
 
         // Send worker ID to the master
         let msg: [u8; 8] = (worker_id as u64).to_le_bytes();
@@ -352,6 +354,7 @@ pub fn new_master_worker_socket_channels(
         .map(|worker_id| {
             let socket =
                 TcpStream::connect(master_socket_addr).expect("Failed to connect worker to master");
+            socket.set_nodelay(true).expect("Failed to set TCP_NODELAY");
             WorkerProverChannelSocket { worker_id, socket }
         })
         .collect();
@@ -362,6 +365,7 @@ pub fn new_master_worker_socket_channels(
         let (socket, _addr) = listener
             .accept()
             .expect("Failed to accept worker connection");
+        socket.set_nodelay(true).expect("Failed to set TCP_NODELAY");
         worker_sockets.push(socket);
     }
 
